@@ -125,6 +125,22 @@
         "vite": "^6",
       },
     },
+    "packages/cli": {
+      "name": "@litemetrics/cli",
+      "version": "0.2.0",
+      "bin": {
+        "litemetrics": "./dist/index.js"
+      },
+      "dependencies": {
+        "@litemetrics/client": "workspace:*",
+        "@litemetrics/core": "workspace:*",
+        "commander": "^12",
+      },
+      "devDependencies": {
+        "tsup": "^8",
+        "typescript": "^5.7",
+      },
+    },
     "packages/client": {
       "name": "@litemetrics/client",
       "version": "0.2.0",
@@ -179,7 +195,7 @@
     },
     "packages/react-native": {
       "name": "@litemetrics/react-native",
-      "version": "0.2.2",
+      "version": "0.2.4",
       "dependencies": {
         "@litemetrics/core": "workspace:*",
       },
@@ -397,6 +413,8 @@
     "@jridgewell/sourcemap-codec": ["@jridgewell/sourcemap-codec@1.5.5", "", {}, "sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og=="],
 
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
+
+    "@litemetrics/cli": ["@litemetrics/cli@workspace:packages/cli"],
 
     "@litemetrics/client": ["@litemetrics/client@workspace:packages/client"],
 

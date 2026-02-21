@@ -1,0 +1,31 @@
+{
+  "name": "@litemetrics/cli",
+  "version": "0.2.0",
+  "description": "CLI tool for Litemetrics analytics - query data, manage sites, AI-agent friendly",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "litemetrics": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@litemetrics/client": "workspace:*",
+    "@litemetrics/core": "workspace:*",
+    "commander": "^12"
+  },
+  "devDependencies": {
+    "tsup": "^8",
+    "typescript": "^5.7"
+  }
+}

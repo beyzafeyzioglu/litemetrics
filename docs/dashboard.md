@@ -46,6 +46,18 @@ Main overview page:
 - Period selector: 7d, 14d, 30d, 90d, or custom date range
 - Export data as CSV
 
+### Insights (`/insights`)
+
+Behavioral analytics:
+- Hourly distribution charts (busy hours, conversion hours)
+- Top exit pages, transitions, scroll pages, button clicks, link targets
+
+### Campaigns (`/campaigns`)
+
+UTM and channel tracking:
+- 6 tabs: Channels, Sources, Mediums, Campaigns, Terms, Contents
+- Pie charts and top lists for each UTM parameter
+
 ### Realtime (`/realtime`)
 
 Live monitoring:
@@ -98,5 +110,9 @@ Sidebar with links to all pages. Site selector at the top for switching between 
 - Tailwind CSS 3
 - Recharts 2 (charts)
 - react-simple-maps (world map)
-- react-icons (browser/OS/device icons)
+- lucide-react (icons)
 - @litemetrics/client (API queries)
+
+## See Also
+
+- [CLI](../packages/cli/README.md) -- Same data accessible from the terminal

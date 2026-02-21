@@ -317,6 +317,32 @@ func trackEvent(siteID, url string) error {
 
 ## Reading Data
 
+### CLI
+
+```bash
+bun add -g @litemetrics/cli
+
+# Set up config
+export LITEMETRICS_URL=https://analytics.yoursite.com
+export LITEMETRICS_ADMIN_SECRET=your-admin-secret
+export LITEMETRICS_SITE_ID=your-site-id
+
+# Query metrics
+litemetrics overview -p 7d --compare
+litemetrics stats top_pages -p 30d -l 10
+litemetrics timeseries visitors -p 30d -g day
+litemetrics events -t event -p 24h
+litemetrics users -l 20
+litemetrics retention -p 90d -w 8
+
+# JSON output for AI agents / piping
+litemetrics overview -p 7d -f json | jq '.pageviews.total'
+```
+
+See [`packages/cli/README.md`](../packages/cli/README.md) for all commands and options.
+
+### Client SDK
+
 Use `@litemetrics/client` or query the API directly:
 
 ```bash

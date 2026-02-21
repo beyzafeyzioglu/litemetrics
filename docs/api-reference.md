@@ -1,8 +1,11 @@
 # API Reference
 
+> You can also query all these endpoints from the terminal using the [CLI](../packages/cli/README.md):
+> `litemetrics stats top_pages -p 7d -l 10`
+
 ## Authentication
 
-- **Admin Secret** -- Full access to site management. Header: `X-Litemetrics-Admin-Secret`
+- **Admin Secret** -- Full access to site management and all analytics. Header: `X-Litemetrics-Admin-Secret`
 - **Site Secret** -- Read access to a site's analytics. Header: `X-Litemetrics-Secret`
 - The collect endpoint is public (no auth).
 
@@ -85,6 +88,20 @@ Query analytics metrics for a site.
 | `top_devices` | Device type breakdown |
 | `top_browsers` | Browser breakdown |
 | `top_os` | OS breakdown |
+| `top_os_versions` | OS version breakdown |
+| `top_device_models` | Device model breakdown (mobile) |
+| `top_app_versions` | App version breakdown (mobile) |
+| `top_exit_pages` | Exit pages |
+| `top_transitions` | Page transitions |
+| `top_scroll_pages` | Most scrolled pages |
+| `top_button_clicks` | Top button clicks |
+| `top_link_targets` | Top link click targets |
+| `top_utm_sources` | UTM sources |
+| `top_utm_mediums` | UTM mediums |
+| `top_utm_campaigns` | UTM campaigns |
+| `top_utm_terms` | UTM terms |
+| `top_utm_contents` | UTM contents |
+| `top_channels` | Traffic channels |
 | `retention` | Cohort retention data |
 
 **Response (count):**
@@ -155,7 +172,7 @@ Time series data uses the same endpoint with `metric=timeseries`.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `timeseries_metric` | string | `pageviews` | `pageviews`, `visitors`, or `sessions` |
+| `timeseries_metric` | string | `pageviews` | `pageviews`, `visitors`, `sessions`, `events`, or `conversions` |
 | `granularity` | string | auto | `hour`, `day`, `week`, or `month` |
 
 **Response:**

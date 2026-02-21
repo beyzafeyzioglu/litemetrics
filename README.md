@@ -121,6 +121,33 @@ bun run ios
 bun run android
 ```
 
+### 5. Query from the terminal (CLI)
+
+```bash
+bun add -g @litemetrics/cli
+```
+
+```bash
+# Configure once
+export LITEMETRICS_URL=https://your-server.com
+export LITEMETRICS_ADMIN_SECRET=your-secret
+export LITEMETRICS_SITE_ID=your-site-id
+
+# Overview of all metrics
+litemetrics overview -p 7d --compare
+
+# Top pages
+litemetrics stats top_pages -p 30d -l 10
+
+# Time series
+litemetrics timeseries visitors -p 30d -g day
+
+# JSON output for AI agents
+litemetrics overview -p 7d -f json
+```
+
+See [`packages/cli/README.md`](./packages/cli/README.md) for all commands.
+
 <br/>
 
 ## Deploy
@@ -179,10 +206,16 @@ docker run -p 3002:3002 \
 │  ~3KB, browser   │ events  │  ClickHouse /    │ queries │  React UI        │
 │                  │         │  MongoDB         │         │                  │
 └──────────────────┘         └──────────────────┘         └──────────────────┘
-     Browser / App                Your Server                  Dashboard
+     Browser / App                Your Server           ▲     Dashboard
+                                                        │
+                                                   ┌────┴─────────────┐
+                                                   │  @litemetrics/   │
+                                                   │  cli             │
+                                                   │  Terminal / AI   │
+                                                   └──────────────────┘
 ```
 
-The tracker handles session management, visitor IDs, batching, and SPA detection client-side. The server stores events and runs queries. The Docker image bundles everything into a single container.
+The tracker handles session management, visitor IDs, batching, and SPA detection client-side. The server stores events and runs queries. The CLI provides terminal access to all analytics data — designed for both humans and AI agents. The Docker image bundles everything into a single container.
 
 <br/>
 
@@ -196,6 +229,7 @@ The tracker handles session management, visitor IDs, batching, and SPA detection
 | [`@litemetrics/react`](./packages/react) | React provider and hooks |
 | [`@litemetrics/react-native`](./packages/react-native) | React Native / Expo provider |
 | [`@litemetrics/client`](./packages/client) | Typed client for reading analytics data |
+| [`@litemetrics/cli`](./packages/cli) | CLI tool for querying analytics and managing sites |
 | [`@litemetrics/core`](./packages/core) | Shared types and constants |
 
 ### Apps
@@ -205,12 +239,13 @@ The tracker handles session management, visitor IDs, batching, and SPA detection
 | [`@litemetrics/dashboard`](./apps/dashboard) | Analytics dashboard (React + Vite + Tailwind) |
 | [`@litemetrics/server`](./apps/server) | Self-hosted server (serves dashboard + API) |
 | [`@litemetrics/mobile`](./apps/mobile) | Native mobile analytics app (Expo Router + React Native) |
+| [`@litemetrics/landing`](./apps/landing) | Landing page (React + Vite + Tailwind) |
 
 <br/>
 
 ## Metrics
 
-`pageviews` · `visitors` · `sessions` · `events` · `conversions` · `top_pages` · `top_referrers` · `top_countries` · `top_cities` · `top_events` · `top_conversions` · `top_exit_pages` · `top_transitions` · `top_scroll_pages` · `top_button_clicks` · `top_link_targets` · `top_devices` · `top_browsers` · `top_os` · `timeseries` · `retention`
+`pageviews` · `visitors` · `sessions` · `events` · `conversions` · `top_pages` · `top_referrers` · `top_countries` · `top_cities` · `top_events` · `top_conversions` · `top_exit_pages` · `top_transitions` · `top_scroll_pages` · `top_button_clicks` · `top_link_targets` · `top_devices` · `top_browsers` · `top_os` · `top_os_versions` · `top_device_models` · `top_app_versions` · `top_utm_sources` · `top_utm_mediums` · `top_utm_campaigns` · `top_utm_terms` · `top_utm_contents` · `top_channels` · `timeseries` · `retention`
 
 <br/>
 
@@ -229,6 +264,7 @@ The tracker handles session management, visitor IDs, batching, and SPA detection
 - [Integration Guide](./docs/integration-guide.md) — React, React Native, Next.js, Vue, Python, PHP, Ruby, Go
 - [API Reference](./docs/api-reference.md)
 - [Dashboard](./docs/dashboard.md)
+- [CLI](./packages/cli/README.md)
 - [Mobile App](./apps/mobile/README.md)
 - [Self-Hosting](./docs/self-hosting.md)
 - [Scaling](./docs/scaling.md)

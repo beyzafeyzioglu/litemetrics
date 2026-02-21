@@ -110,12 +110,25 @@ The tracker automatically tracks pageviews, detects SPA navigation, batches even
 
 ## 4. See Your Data
 
+**CLI:**
+
+```bash
+bun add -g @litemetrics/cli
+
+litemetrics overview -p 7d --compare \
+  --url http://localhost:3002 \
+  --secret YOUR_ADMIN_SECRET \
+  --site YOUR_SITE_ID
+```
+
+**API:**
+
 ```bash
 curl "http://localhost:3002/api/stats?siteId=YOUR_SITE_ID&metric=pageviews&period=7d" \
   -H "X-Litemetrics-Secret: YOUR_SECRET_KEY"
 ```
 
-Or use the [Dashboard](./dashboard.md).
+Or use the [Dashboard](./dashboard.md) or the [CLI](../packages/cli/README.md).
 
 ## 5. Run the Mobile App (Optional)
 
@@ -163,5 +176,6 @@ const site = await collector.createSite({ name: customerName, domain: customerDo
 - [Integration Guide](./integration-guide.md) -- React, Next.js, Vue, React Native, and more
 - [API Reference](./api-reference.md) -- Full endpoint docs
 - [Dashboard](./dashboard.md) -- Analytics dashboard
+- [CLI](../packages/cli/README.md) -- Terminal access to analytics (human + AI agent friendly)
 - [Mobile App](../apps/mobile/README.md) -- Mobile app usage and pre-release checklist
 - [Self-Hosting](./self-hosting.md) -- Docker and production deployment

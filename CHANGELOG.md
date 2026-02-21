@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0 — CLI
+
+### `@litemetrics/cli` (new)
+
+- CLI tool for querying analytics data and managing sites from the terminal
+- Supports all API endpoints: `overview`, `stats`, `timeseries`, `events`, `users`, `retention`, `sites`
+- Output formats: `table` (human-readable), `json` (AI agents), `csv` (export)
+- Auto-detects format: JSON when piped, table when interactive
+- Config via CLI flags, env vars (`LITEMETRICS_URL`, `LITEMETRICS_ADMIN_SECRET`, `LITEMETRICS_SITE_ID`), or `~/.litemetricsrc`
+- All 28 metrics supported including UTM, channels, mobile-specific metrics
+- Filtering with `--filter key=value` (geo, device, UTM, event metadata)
+- Period comparison with `--compare`
+- Install globally: `bun add -g @litemetrics/cli`
+
 ## 0.2.0 — Mobile App Support
 
 ### Breaking Changes
