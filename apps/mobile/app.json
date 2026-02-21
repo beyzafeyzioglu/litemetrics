@@ -2,7 +2,10 @@
   "expo": {
     "name": "Litemetrics",
     "slug": "litemetrics-mobile",
-    "platforms": ["ios", "android"],
+    "platforms": [
+      "ios",
+      "android"
+    ],
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -25,7 +28,17 @@
         "backgroundColor": "#ffffff"
       }
     },
-    "plugins": ["expo-router", "expo-secure-store"],
-    "scheme": "litemetrics"
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ],
+    "scheme": "litemetrics",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "37a36a32-bedc-4342-9d1e-6b695e1081fb"
+      }
+    },
+    "owner": "metehankurucu"
   }
 }
