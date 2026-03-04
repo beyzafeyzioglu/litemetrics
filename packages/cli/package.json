@@ -1,6 +1,6 @@
 {
   "name": "@litemetrics/cli",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "CLI tool for Litemetrics analytics - query data, manage sites, AI-agent friendly",
   "license": "MIT",
   "type": "module",
@@ -21,8 +21,8 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@litemetrics/client": "workspace:*",
-    "@litemetrics/core": "workspace:*",
+    "@litemetrics/client": "^0.3.1",
+    "@litemetrics/core": "^0.3.1",
     "commander": "^12"
   },
   "devDependencies": {

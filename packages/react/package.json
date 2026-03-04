@@ -1,6 +1,6 @@
 {
   "name": "@litemetrics/react",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "React bindings for Litemetrics analytics (hooks + provider)",
   "license": "MIT",
   "author": "Metehan Kurucu",
@@ -40,7 +40,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@litemetrics/tracker": "workspace:*"
+    "@litemetrics/tracker": "^0.3.1"
   },
   "peerDependencies": {
     "react": ">=18"

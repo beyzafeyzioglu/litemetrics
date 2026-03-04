@@ -1,6 +1,6 @@
 {
   "name": "@litemetrics/react-native",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "React Native / Expo bindings for Litemetrics analytics",
   "license": "MIT",
   "author": "Metehan Kurucu",
@@ -40,7 +40,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@litemetrics/core": "workspace:*"
+    "@litemetrics/core": "^0.3.1"
   },
   "peerDependencies": {
     "react": ">=18",
