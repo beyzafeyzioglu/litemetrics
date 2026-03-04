@@ -1,6 +1,37 @@
 import type { QueryParams, Period, Granularity, TimeSeriesPoint } from '@litemetrics/core';
 import { randomBytes } from 'crypto';
 
+/** Get the offset in ms between UTC and the given IANA timezone at a specific instant. */
+export function getTimezoneOffsetMs(date: Date, timezone: string): number {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)!.value;
+  const y = parseInt(get('year'));
+  const m = parseInt(get('month')) - 1;
+  const d = parseInt(get('day'));
+  const h = parseInt(get('hour') === '24' ? '0' : get('hour'));
+  const mi = parseInt(get('minute'));
+  const s = parseInt(get('second'));
+  return Date.UTC(y, m, d, h, mi, s) - date.getTime();
+}
+
+/** Parse a value as UTC. Appends 'Z' to bare datetime strings so they aren't parsed as local. */
+export function toUTCDate(value: string | Date | number): Date {
+  if (value instanceof Date) return value;
+  if (typeof value === 'number') return new Date(value);
+  const s = String(value).trim();
+  // If string has no timezone indicator (Z, +, -offset), treat as UTC
+  if (s.length >= 10 && !s.endsWith('Z') && !/[+-]\d{2}:?\d{2}$/.test(s)) {
+    return new Date(s.replace(' ', 'T') + 'Z');
+  }
+  return new Date(s);
+}
+
 export function resolvePeriod(q: Pick<QueryParams, 'period' | 'dateFrom' | 'dateTo'>): { dateRange: { from: string; to: string }; period: Period } {
   const now = new Date();
   const period = q.period ?? '7d';
@@ -59,38 +90,51 @@ export function fillBuckets(
   granularity: Granularity,
   dateFormat: string,
   rows: { _id: string; value: number }[],
+  timezone?: string,
 ): TimeSeriesPoint[] {
   const map = new Map(rows.map((r) => [r._id, r.value]));
   const points: TimeSeriesPoint[] = [];
-  const current = new Date(from);
 
-  // Align to bucket start
+  // When timezone is provided, shift from/to to wall-clock so bucket keys
+  // align with ClickHouse's timezone-aware toStartOf* output.
+  // Use separate offsets for from/to to handle DST transitions correctly.
+  const fromOffset = timezone ? getTimezoneOffsetMs(from, timezone) : 0;
+  const toOffset = timezone ? getTimezoneOffsetMs(to, timezone) : 0;
+  const current = new Date(from.getTime() + fromOffset);
+  const toWall = new Date(to.getTime() + toOffset);
+
+  // Align to bucket start (using UTC methods on wall-clock shifted dates)
   if (granularity === 'hour') {
-    current.setMinutes(0, 0, 0);
+    current.setUTCMinutes(0, 0, 0);
   } else if (granularity === 'day') {
-    current.setHours(0, 0, 0, 0);
+    current.setUTCHours(0, 0, 0, 0);
   } else if (granularity === 'week') {
-    const day = current.getDay();
+    const day = current.getUTCDay();
     const diff = day === 0 ? -6 : 1 - day;
-    current.setDate(current.getDate() + diff);
-    current.setHours(0, 0, 0, 0);
+    current.setUTCDate(current.getUTCDate() + diff);
+    current.setUTCHours(0, 0, 0, 0);
   } else if (granularity === 'month') {
-    current.setDate(1);
-    current.setHours(0, 0, 0, 0);
+    current.setUTCDate(1);
+    current.setUTCHours(0, 0, 0, 0);
   }
 
-  while (current <= to) {
+  while (current <= toWall) {
     const key = formatDateBucket(current, dateFormat);
-    points.push({ date: current.toISOString(), value: map.get(key) ?? 0 });
+    // Shift back to real UTC for the date field.
+    // Recompute offset per-bucket to handle DST transitions correctly.
+    const approxUtc = new Date(current.getTime() - fromOffset);
+    const exactOffset = timezone ? getTimezoneOffsetMs(approxUtc, timezone) : 0;
+    const realUtc = new Date(current.getTime() - exactOffset);
+    points.push({ date: realUtc.toISOString(), value: map.get(key) ?? 0 });
 
     if (granularity === 'hour') {
-      current.setHours(current.getHours() + 1);
+      current.setUTCHours(current.getUTCHours() + 1);
     } else if (granularity === 'day') {
-      current.setDate(current.getDate() + 1);
+      current.setUTCDate(current.getUTCDate() + 1);
     } else if (granularity === 'week') {
-      current.setDate(current.getDate() + 7);
+      current.setUTCDate(current.getUTCDate() + 7);
     } else if (granularity === 'month') {
-      current.setMonth(current.getMonth() + 1);
+      current.setUTCMonth(current.getUTCMonth() + 1);
     }
   }
 
@@ -98,18 +142,18 @@ export function fillBuckets(
 }
 
 export function formatDateBucket(date: Date, format: string): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  const h = String(date.getHours()).padStart(2, '0');
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(date.getUTCDate()).padStart(2, '0');
+  const h = String(date.getUTCHours()).padStart(2, '0');
 
   if (format === '%Y-%m-%dT%H:00') return `${y}-${m}-${d}T${h}:00`;
   if (format === '%Y-%m-%d') return `${y}-${m}-${d}`;
   if (format === '%Y-%m') return `${y}-${m}`;
   if (format === '%G-W%V') {
-    const jan4 = new Date(y, 0, 4);
-    const dayOfYear = Math.ceil((date.getTime() - new Date(y, 0, 1).getTime()) / 86400000) + 1;
-    const jan4Day = jan4.getDay() || 7;
+    const jan4 = new Date(Date.UTC(y, 0, 4));
+    const dayOfYear = Math.ceil((date.getTime() - Date.UTC(y, 0, 1)) / 86400000) + 1;
+    const jan4Day = jan4.getUTCDay() || 7;
     const weekNum = Math.ceil((dayOfYear + jan4Day - 1) / 7);
     return `${y}-W${String(weekNum).padStart(2, '0')}`;
   }
@@ -117,10 +161,10 @@ export function formatDateBucket(date: Date, format: string): string {
 }
 
 export function getISOWeek(date: Date): string {
-  const y = date.getFullYear();
-  const jan4 = new Date(y, 0, 4);
-  const dayOfYear = Math.ceil((date.getTime() - new Date(y, 0, 1).getTime()) / 86400000) + 1;
-  const jan4Day = jan4.getDay() || 7;
+  const y = date.getUTCFullYear();
+  const jan4 = new Date(Date.UTC(y, 0, 4));
+  const dayOfYear = Math.ceil((date.getTime() - Date.UTC(y, 0, 1)) / 86400000) + 1;
+  const jan4Day = jan4.getUTCDay() || 7;
   const weekNum = Math.ceil((dayOfYear + jan4Day - 1) / 7);
   return `${y}-W${String(weekNum).padStart(2, '0')}`;
 }

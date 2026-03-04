@@ -318,6 +318,7 @@ export async function createCollector(config: CollectorConfig): Promise<Collecto
             dateTo: params.dateTo,
             granularity: q.granularity as TimeSeriesParams['granularity'],
             filters: q.filters ? JSON.parse(q.filters as string) : undefined,
+            timezone: params.timezone,
           };
           if (tsParams.metric === 'conversions') {
             const site = await db.getSite(params.siteId);
@@ -658,19 +659,8 @@ async function parseBody(req: any): Promise<unknown> {
   });
 }
 
-function extractQueryParams(req: any): QueryParams {
-  const q = req.query ?? Object.fromEntries(new URL(req.url, 'http://localhost').searchParams);
-  return {
-    siteId: q.siteId as string,
-    metric: q.metric as QueryParams['metric'],
-    period: q.period as QueryParams['period'],
-    dateFrom: q.dateFrom as string | undefined,
-    dateTo: q.dateTo as string | undefined,
-    limit: q.limit ? parseInt(q.limit as string, 10) : undefined,
-    filters: q.filters ? JSON.parse(q.filters as string) : undefined,
-    compare: q.compare === 'true' || q.compare === '1',
-  };
-}
+// Extracted to query-helpers.ts for testability
+import { extractQueryParams } from './query-helpers.js';
 
 function sendJson(res: any, status: number, body: unknown): void {
   if (typeof res.status === 'function' && typeof res.json === 'function') {
