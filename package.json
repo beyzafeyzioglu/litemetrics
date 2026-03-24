@@ -5,6 +5,7 @@
     "packages/*",
     "examples/*",
     "apps/dashboard",
+    "apps/demo",
     "apps/landing",
     "apps/server"
   ],
