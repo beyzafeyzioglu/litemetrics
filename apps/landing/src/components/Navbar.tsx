@@ -1,6 +1,8 @@
 import { useState } from 'react';
+import { useLitemetrics } from '@litemetrics/react';
 
 export function Navbar() {
+  const { track } = useLitemetrics();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
@@ -16,6 +18,15 @@ export function Navbar() {
           <a href="#setup" className="text-sm text-zinc-400 hover:text-white transition-colors">Setup</a>
           <a href="https://github.com/metehankurucu/litemetrics" target="_blank" rel="noopener noreferrer" className="text-sm text-zinc-400 hover:text-white transition-colors">GitHub</a>
           <a href="https://github.com/metehankurucu/litemetrics#readme" target="_blank" rel="noopener noreferrer" className="text-sm text-zinc-400 hover:text-white transition-colors">Docs</a>
+          <a
+            href="https://demo.litemetrics.dev"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => track('Live Demo Click', { source: 'navbar' })}
+            className="text-sm font-medium text-emerald-400 hover:text-emerald-300 transition-colors"
+          >
+            Live Demo
+          </a>
           <a
             href="#get-started"
             className="text-sm font-medium text-white bg-brand-600 hover:bg-brand-500 px-4 py-2 rounded-lg transition-colors"
@@ -46,6 +57,9 @@ export function Navbar() {
           <a href="#setup" className="block text-sm text-zinc-400 hover:text-white">Setup</a>
           <a href="https://github.com/metehankurucu/litemetrics" target="_blank" rel="noopener noreferrer" className="block text-sm text-zinc-400 hover:text-white">GitHub</a>
           <a href="https://github.com/metehankurucu/litemetrics#readme" target="_blank" rel="noopener noreferrer" className="block text-sm text-zinc-400 hover:text-white">Docs</a>
+          <a href="https://demo.litemetrics.dev" target="_blank" rel="noopener noreferrer" onClick={() => track('Live Demo Click', { source: 'navbar' })} className="block text-sm font-medium text-emerald-400 hover:text-emerald-300">
+            Live Demo
+          </a>
           <a href="#get-started" className="block text-sm font-medium text-white bg-brand-600 px-4 py-2 rounded-lg text-center">
             Get Started
           </a>

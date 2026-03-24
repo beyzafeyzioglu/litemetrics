@@ -1,4 +1,7 @@
+import { useLitemetrics } from '@litemetrics/react';
+
 export function DashboardPreview() {
+  const { track } = useLitemetrics();
   return (
     <section className="relative py-24 md:py-32 overflow-hidden">
       <div className="glow-orb w-[500px] h-[500px] bg-brand-600/15 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
@@ -127,6 +130,25 @@ export function DashboardPreview() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Live Demo CTA */}
+        <div className="text-center mt-10">
+          <a
+            href="https://demo.litemetrics.dev"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => track('Live Demo Click', { source: 'dashboard_preview' })}
+            className="group inline-flex items-center gap-2 px-8 py-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-medium text-lg hover:bg-emerald-500/20 hover:border-emerald-400/50 hover:text-emerald-200 transition-all hover:shadow-lg hover:shadow-emerald-500/10"
+          >
+            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+            Try the Live Demo
+            <svg className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          </a>
         </div>
       </div>
     </section>

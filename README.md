@@ -10,11 +10,16 @@
 </p>
 
 <p align="center">
+  <a href="https://demo.litemetrics.dev"><strong>Live Demo</strong></a> •
   <a href="#quick-start">Quick Start</a> •
   <a href="#packages">Packages</a> •
   <a href="#deploy">Deploy</a> •
   <a href="#docs">Docs</a> •
   <a href="https://github.com/metehankurucu/litemetrics/issues">Issues</a>
+</p>
+
+<p align="center">
+  <a href="https://demo.litemetrics.dev"><img src="https://img.shields.io/badge/%E2%96%B6%EF%B8%8F_Live_Demo-demo.litemetrics.dev-00c853?style=for-the-badge&labelColor=1a1a2e" alt="Live Demo" /></a>
 </p>
 
 <p align="center">

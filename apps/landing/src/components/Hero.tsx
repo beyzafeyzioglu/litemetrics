@@ -1,4 +1,7 @@
+import { useLitemetrics } from '@litemetrics/react';
+
 export function Hero() {
+  const { track } = useLitemetrics();
   return (
     <section className="relative min-h-[90vh] flex items-center justify-center overflow-hidden pt-16">
       {/* Background effects */}
@@ -47,6 +50,18 @@ export function Hero() {
             <svg className="inline-block w-4 h-4 ml-2 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
             </svg>
+          </a>
+          <a
+            href="https://demo.litemetrics.dev"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => track('Live Demo Click', { source: 'hero' })}
+            className="group px-8 py-3.5 rounded-xl border border-emerald-500/40 text-emerald-300 font-medium text-base hover:border-emerald-400 hover:text-emerald-200 transition-all hover:bg-emerald-500/10 hover:shadow-lg hover:shadow-emerald-500/10"
+          >
+            <svg className="inline-block w-4 h-4 mr-2 -mt-0.5" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+            Live Demo
           </a>
           <a
             href="https://github.com/metehankurucu/litemetrics"
