@@ -181,6 +181,22 @@ export interface CollectorConfig {
   geoip?: boolean | GeoIPConfig;
   cors?: CORSConfig;
   trustProxy?: boolean;
+  timestampSanity?: TimestampSanityConfig;
+}
+
+export type TimestampOutOfWindowReason = 'future' | 'past' | 'invalid';
+
+export interface TimestampOutOfWindowInfo {
+  reason: TimestampOutOfWindowReason;
+  offsetMs: number;
+  event: ClientEvent;
+}
+
+export interface TimestampSanityConfig {
+  futureMs?: number;
+  pastMs?: number;
+  mode?: 'drop' | 'clamp' | 'off';
+  onOutOfWindow?: (info: TimestampOutOfWindowInfo) => void;
 }
 
 export interface DBConfig {
