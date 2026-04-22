@@ -13,6 +13,7 @@ COPY packages/react/package.json packages/react/
 COPY packages/react-native/package.json packages/react-native/
 COPY packages/ui/package.json packages/ui/
 COPY apps/dashboard/package.json apps/dashboard/
+COPY apps/demo/package.json apps/demo/
 COPY apps/server/package.json apps/server/
 COPY apps/landing/package.json apps/landing/
 COPY examples/express/package.json examples/express/
