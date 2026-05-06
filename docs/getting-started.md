@@ -1,6 +1,6 @@
 # Getting Started
 
-Litemetrics runs inside your existing Node.js server with ClickHouse (default) or MongoDB. No separate service needed.
+Litemetrics runs inside your existing Node.js server with ClickHouse (default), Postgres, or MongoDB. No separate service needed.
 
 ## 1. Add the Collector
 
@@ -31,9 +31,11 @@ app.all('/api/sites/*', (req, res) => collector.sitesHandler()(req, res));
 app.listen(3002);
 ```
 
-This creates 2 tables in ClickHouse (`litemetrics_events` and `litemetrics_sites`). Existing data is not touched.
+This creates 3 tables (`litemetrics_events`, `litemetrics_sites`, `litemetrics_identity_map`) on first start. Existing data is not touched.
 
-Using MongoDB instead? Pass `{ adapter: 'mongodb', url: 'mongodb://localhost:27017/myapp' }` to `db`.
+Using Postgres? Pass `{ adapter: 'postgres', url: 'postgres://user:pass@localhost:5432/myapp' }` to `db`.
+
+Using MongoDB? Pass `{ adapter: 'mongodb', url: 'mongodb://localhost:27017/myapp' }` to `db`.
 
 ## 2. Create a Site
 

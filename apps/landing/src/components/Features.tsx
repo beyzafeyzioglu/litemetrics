@@ -66,7 +66,7 @@ const features = [
       </svg>
     ),
     title: 'Self-Hosted',
-    description: 'ClickHouse or MongoDB. Deploy on your infra. No cookies, no third parties, GDPR-compliant by design.',
+    description: 'ClickHouse, Postgres, or MongoDB with full feature parity. Deploy on your infra. No cookies, no third parties, GDPR-compliant by design.',
     color: 'from-cyan-500/20 to-cyan-500/0',
     border: 'group-hover:border-cyan-500/20',
     iconColor: 'text-cyan-400',

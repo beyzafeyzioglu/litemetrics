@@ -8,8 +8,8 @@ Litemetrics ships as a single Docker image. It bundles the server, dashboard, tr
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/template/litemetrics?referralCode=litemetrics)
 
-1. Click the button, add a ClickHouse service (or MongoDB)
-2. Set `CLICKHOUSE_URL` (or `MONGODB_URL`) and `ADMIN_SECRET` env vars
+1. Click the button, add a database plugin: Postgres, ClickHouse, or MongoDB
+2. Set `DB_ADAPTER` (`postgres`, `clickhouse`, or `mongodb`), the matching connection URL (`POSTGRES_URL`, `CLICKHOUSE_URL`, or `MONGODB_URL`), and `ADMIN_SECRET` env vars
 3. Deploy
 
 ### Docker Compose (recommended)
@@ -52,8 +52,9 @@ Open `http://localhost:3002` for the dashboard.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DB_ADAPTER` | Database adapter (`clickhouse` or `mongodb`) | `clickhouse` |
+| `DB_ADAPTER` | Database adapter (`clickhouse`, `postgres`, or `mongodb`) | `clickhouse` |
 | `CLICKHOUSE_URL` | ClickHouse connection URL | `http://localhost:8123` |
+| `POSTGRES_URL` | Postgres connection string (when using postgres adapter) | `postgres://postgres:postgres@localhost:5432/litemetrics` |
 | `MONGODB_URL` | MongoDB connection string (when using mongodb adapter) | `mongodb://localhost:27017/litemetrics` |
 | `ADMIN_SECRET` | Secret for admin login and site management | _(none)_ |
 | `PORT` | Server port | `3002` |
@@ -61,6 +62,20 @@ Open `http://localhost:3002` for the dashboard.
 | `TRUST_PROXY` | Trust X-Forwarded-For headers | `true` |
 
 `DATABASE_URL` and `LITEMETRICS_ADMIN_SECRET` also work as aliases.
+
+## Using Postgres Instead
+
+To use Postgres instead of ClickHouse, set `DB_ADAPTER=postgres`:
+
+```bash
+docker run -p 3002:3002 \
+  -e DB_ADAPTER=postgres \
+  -e POSTGRES_URL=postgres://user:pass@your-postgres:5432/litemetrics \
+  -e ADMIN_SECRET=your-secret \
+  litemetrics
+```
+
+Tables are auto-created on first start. Recommended when you already run Postgres for your app and want one less moving piece. Full feature parity with ClickHouse — every metric, time series, top-N query, and retention cohort returns identical results.
 
 ## Using MongoDB Instead
 
@@ -120,6 +135,15 @@ For production:
 - Data is stored in named Docker volumes (`clickhouse_data`) and persists across container restarts/updates
 - ClickHouse handles millions of events with sub-second query latency
 - For backups, use `clickhouse-backup` tool
+
+## Postgres Notes
+
+If using the Postgres adapter:
+- Schema (tables and indexes) is auto-created on first start
+- Events use native `jsonb` for properties/traits and a composite `(site_id, timestamp)` index for fast range scans
+- Sites use a `deleted_at` soft-delete column to mirror ClickHouse semantics
+- For backups, use `pg_dump` or your provider's snapshot feature (Supabase, Neon, RDS, Railway PG plugin)
+- Pgs at scale (>10M events) benefit from monthly partitioning; the schema is partition-friendly but not partitioned by default
 
 ## MongoDB Notes
 

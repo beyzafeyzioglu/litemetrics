@@ -93,6 +93,17 @@ If you're seeing slowness:
 2. **Rate limiting** -- 30 minutes, prevents abuse
 3. **Materialized views** -- Pre-aggregate common queries in ClickHouse
 
+## Postgres Adapter
+
+If using Postgres instead of ClickHouse:
+- Full feature parity with ClickHouse, every metric and time series produces identical results
+- Event ingestion uses chunked multi-row INSERT (capped at 1400 rows/batch to stay under PG's 65K bind-parameter limit)
+- Properties and traits are stored as native `jsonb`
+- Composite index on `(site_id, timestamp DESC)` powers fast range scans
+- Sites use a `deleted_at` soft-delete column to mirror ClickHouse semantics
+- Comfortable up to 10M+ events on a 2 CPU / 4 GB Postgres instance (Supabase, Neon, Railway PG)
+- For larger workloads, partition `litemetrics_events` by month and add a `BRIN` index on `timestamp`
+
 ## MongoDB Adapter
 
 If using MongoDB instead of ClickHouse:
@@ -100,4 +111,4 @@ If using MongoDB instead of ClickHouse:
 - Unique counts use `$addToSet` (loads IDs into memory, breaks at ~500K+ uniques)
 - Add composite indexes for `top_*` queries: `{ siteId: 1, timestamp: -1, "geo.country": 1 }`
 - MongoDB Atlas free tier (512MB) handles ~10 apps with 1K users
-- For larger datasets, consider switching to ClickHouse adapter
+- For larger datasets, consider switching to ClickHouse or Postgres adapter

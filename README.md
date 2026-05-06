@@ -49,7 +49,7 @@
 | **Your brand, your colors** | 10 built-in theme presets. CSS custom properties for full control. Dark mode included. Ship analytics that look like they belong in your app. |
 | **Multi-tenant ready** | Each customer gets isolated analytics via `site_id`. One database, zero cross-contamination. Built for SaaS from day one. |
 | **Lightweight tracker** | ~3 KB gzipped. Auto-tracks pageviews, sessions, scroll depth, button clicks, outbound links — or go fully manual. |
-| **ClickHouse & MongoDB** | Choose the database that fits. ClickHouse for speed at scale, MongoDB for simplicity. Swap with one env var. |
+| **ClickHouse, Postgres & MongoDB** | Choose the database that fits. ClickHouse for speed at scale, Postgres for the DB you already run, MongoDB for simplicity. Swap with one env var, full feature parity. |
 | **One-click deploy** | Docker Compose, Railway, or a single Docker container. Up and running in under a minute. |
 
 <br/>
@@ -109,6 +109,8 @@ app.all('/api/stats', (req, res) => collector.queryHandler()(req, res));
 app.listen(3002);
 ```
 
+> For Postgres: `db: { adapter: 'postgres', url: 'postgres://user:pass@localhost:5432/myapp' }`
+>
 > For MongoDB: `db: { adapter: 'mongodb', url: 'mongodb://localhost:27017/myapp' }`
 
 ### 4. Run the mobile app (Expo)
@@ -180,16 +182,17 @@ docker run -p 3002:3002 \
 ### Railway (one click)
 
 1. Click the **Deploy on Railway** button above
-2. Add a ClickHouse plugin (or MongoDB)
-3. Set `CLICKHOUSE_URL` (or `MONGODB_URL`) and `ADMIN_SECRET`
+2. Add a database plugin — Postgres, ClickHouse, or MongoDB
+3. Set `DB_ADAPTER` and the matching URL (`POSTGRES_URL`, `CLICKHOUSE_URL`, or `MONGODB_URL`) plus `ADMIN_SECRET`
 4. Done — dashboard, API, and tracker served from one container
 
 ### Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DB_ADAPTER` | Database adapter (`clickhouse` or `mongodb`) | `clickhouse` |
+| `DB_ADAPTER` | Database adapter (`clickhouse`, `postgres`, or `mongodb`) | `clickhouse` |
 | `CLICKHOUSE_URL` | ClickHouse connection URL | `http://localhost:8123` |
+| `POSTGRES_URL` | Postgres connection string | `postgres://postgres:postgres@localhost:5432/litemetrics` |
 | `MONGODB_URL` | MongoDB connection string | `mongodb://localhost:27017/litemetrics` |
 | `ADMIN_SECRET` | Secret for admin access and site management | _(none)_ |
 | `PORT` | Server port | `3002` |
@@ -209,6 +212,7 @@ docker run -p 3002:3002 \
 │  tracker         ├────────>│  node            │<────────┤  dashboard       │
 │                  │         │  (collector)     │         │                  │
 │  ~3KB, browser   │ events  │  ClickHouse /    │ queries │  React UI        │
+│                  │         │  Postgres /      │         │                  │
 │                  │         │  MongoDB         │         │                  │
 └──────────────────┘         └──────────────────┘         └──────────────────┘
      Browser / App                Your Server           ▲     Dashboard
@@ -230,7 +234,7 @@ The tracker handles session management, visitor IDs, batching, and SPA detection
 |---------|-------------|
 | [`@litemetrics/ui`](./packages/ui) | Pre-built React dashboard components (10 themes, dark mode, CSS variables) |
 | [`@litemetrics/tracker`](./packages/tracker) | Browser tracker (~3 KB gzipped) |
-| [`@litemetrics/node`](./packages/node) | Server collector, ClickHouse/MongoDB adapters, query API |
+| [`@litemetrics/node`](./packages/node) | Server collector, ClickHouse/Postgres/MongoDB adapters, query API |
 | [`@litemetrics/react`](./packages/react) | React provider and hooks |
 | [`@litemetrics/react-native`](./packages/react-native) | React Native / Expo provider |
 | [`@litemetrics/client`](./packages/client) | Typed client for reading analytics data |

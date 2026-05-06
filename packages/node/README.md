@@ -55,6 +55,16 @@ const collector = await createCollector({
 
 Uses `MergeTree` for events and `ReplacingMergeTree` for sites. Tables are auto-created on init.
 
+### Postgres
+
+```ts
+const collector = await createCollector({
+  db: { adapter: 'postgres', url: 'postgres://user:pass@localhost:5432/litemetrics' },
+});
+```
+
+Full feature parity with the ClickHouse adapter — every metric, time series, top-N query, and retention cohort produces identical results across both backends. Uses native `jsonb` for properties/traits, indexed `(site_id, timestamp)` for fast range scans, and a soft-delete column on sites. Tables are auto-created on init. Recommended when you already run Postgres and want one less moving piece.
+
 ### MongoDB
 
 ```ts
