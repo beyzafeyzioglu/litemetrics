@@ -50,12 +50,13 @@ export function AnalyticsPage({ siteId, client, period, onPeriodChange }: Analyt
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [filters, setFilters] = useState<SegmentFilter[]>([]);
+  const [includeBots, setIncludeBots] = useState(false);
   const filterMap = useMemo(() => filtersToRecord(filters), [filters]);
 
   const effectivePeriod = period;
   const statsOptions = period === 'custom' && dateFrom && dateTo
-    ? { period, dateFrom: new Date(dateFrom).toISOString(), dateTo: new Date(dateTo + 'T23:59:59').toISOString(), timezone: BROWSER_TIMEZONE }
-    : { period, timezone: BROWSER_TIMEZONE };
+    ? { period, dateFrom: new Date(dateFrom).toISOString(), dateTo: new Date(dateTo + 'T23:59:59').toISOString(), timezone: BROWSER_TIMEZONE, includeBots }
+    : { period, timezone: BROWSER_TIMEZONE, includeBots };
 
   const { data: site } = useQuery({
     queryKey: ['site', siteId],
@@ -74,7 +75,7 @@ export function AnalyticsPage({ siteId, client, period, onPeriodChange }: Analyt
   const activeTopMetrics = isApp ? appTopMetrics : webTopMetrics;
 
   const { data, isLoading: loading, error } = useQuery({
-    queryKey: queryKeys.analytics(siteId, period, dateFrom, dateTo, filterMap, site?.type),
+    queryKey: queryKeys.analytics(siteId, period, dateFrom, dateTo, filterMap, site?.type, includeBots),
     queryFn: async () => {
       client.setSiteId(siteId);
       const withFilters = { ...statsOptions, filters: filterMap };
@@ -124,6 +125,17 @@ export function AnalyticsPage({ siteId, client, period, onPeriodChange }: Analyt
 
   const activeVisitors = liveData?.activeVisitors ?? 0;
 
+  const botStatsDateFrom = period === 'custom' && dateFrom ? new Date(dateFrom).toISOString() : undefined;
+  const botStatsDateTo = period === 'custom' && dateTo ? new Date(dateTo + 'T23:59:59').toISOString() : undefined;
+  const { data: botStats } = useQuery({
+    queryKey: queryKeys.botStats(siteId, period, botStatsDateFrom, botStatsDateTo),
+    queryFn: async () => {
+      client.setSiteId(siteId);
+      return client.getBotStats({ period, dateFrom: botStatsDateFrom, dateTo: botStatsDateTo });
+    },
+    enabled: !!siteId && !includeBots && (period !== 'custom' || (!!dateFrom && !!dateTo)),
+  });
+
   // Build pie chart data
   const browserPieData = (tops.top_browsers?.data ?? []).map((d) => ({ name: d.key, value: d.value }));
   const devicePieData = (tops.top_devices?.data ?? []).map((d) => ({ name: d.key, value: d.value }));
@@ -148,6 +160,15 @@ export function AnalyticsPage({ siteId, client, period, onPeriodChange }: Analyt
           onDateToChange={setDateTo}
         />
         <div className="flex items-center gap-2">
+          <label className="flex items-center gap-2 text-xs font-medium text-zinc-600 dark:text-zinc-400 bg-white dark:bg-zinc-800 border border-zinc-200/60 dark:border-zinc-700 rounded-full px-3 py-1.5 shadow-sm cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={includeBots}
+              onChange={(e) => setIncludeBots(e.target.checked)}
+              className="rounded"
+            />
+            Include bot traffic
+          </label>
           <div className="flex items-center gap-2 text-xs font-medium text-zinc-500 dark:text-zinc-400 bg-white dark:bg-zinc-800 border border-zinc-200/60 dark:border-zinc-700 rounded-full px-3 py-1.5 shadow-sm">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
@@ -161,7 +182,7 @@ export function AnalyticsPage({ siteId, client, period, onPeriodChange }: Analyt
           </div>
           <ExportButton data={exportData} filename={`analytics-${siteId}-${period}`} />
           <button
-            onClick={() => queryClient.invalidateQueries({ queryKey: queryKeys.analytics(siteId, period, dateFrom, dateTo, filterMap, site?.type) })}
+            onClick={() => queryClient.invalidateQueries({ queryKey: queryKeys.analytics(siteId, period, dateFrom, dateTo, filterMap, site?.type, includeBots) })}
             className="p-2 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 shadow-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:border-zinc-300 dark:hover:border-zinc-600 hover:shadow transition-all"
             title="Refresh"
           >
@@ -178,8 +199,21 @@ export function AnalyticsPage({ siteId, client, period, onPeriodChange }: Analyt
         </div>
       )}
 
+      {/* Bot filter stats */}
+      {botStats && botStats.total > 0 && !includeBots && (
+        <div className="mb-4 rounded-lg border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-900/10 p-3 text-sm text-amber-900 dark:text-amber-200">
+          <strong>{botStats.total.toLocaleString()}</strong> bot events filtered in this period
+          {' - '}
+          {[
+            botStats.bySignature ? `${botStats.bySignature.toLocaleString()} signature` : null,
+            botStats.byHeuristic ? `${botStats.byHeuristic.toLocaleString()} heuristic` : null,
+            botStats.byRateLimit ? `${botStats.byRateLimit.toLocaleString()} rate-limit` : null,
+          ].filter(Boolean).join(', ')}
+        </div>
+      )}
+
       {/* Time Series Chart */}
-      <TimeSeriesChart client={client} siteId={siteId} period={effectivePeriod} filters={filterMap} />
+      <TimeSeriesChart client={client} siteId={siteId} period={effectivePeriod} filters={filterMap} includeBots={includeBots} />
 
       {/* Overview Stats */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 md:gap-5 mb-6">
@@ -226,7 +260,7 @@ export function AnalyticsPage({ siteId, client, period, onPeriodChange }: Analyt
       )}
 
       {/* World Map */}
-      <WorldMap client={client} siteId={siteId} period={effectivePeriod} filters={filterMap} />
+      <WorldMap client={client} siteId={siteId} period={effectivePeriod} filters={filterMap} includeBots={includeBots} />
 
       {/* Pie Charts */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">

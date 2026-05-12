@@ -141,6 +141,7 @@ export interface EnrichedEvent extends ClientContext {
   ip?: string;
   geo?: GeoInfo;
   device?: DeviceInfo;
+  botFlag?: 'signature' | 'heuristic' | 'rate-limit';
 }
 
 // ─── Collect Payload ────────────────────────────────────────
@@ -175,6 +176,28 @@ export interface TrackerConfig {
 
 // ─── Collector Config (server-side) ─────────────────────────
 
+export type BotFilterMode = 'off' | 'standard' | 'strict' | 'shadow';
+
+export interface BotFilterConfig {
+  /** Default mode for sites that don't override. Default: 'standard'. */
+  defaultMode?: BotFilterMode;
+  /** Sliding-window size in ms for rate-limit layer. Default: 60_000. */
+  rateLimitWindowMs?: number;
+  /** Max events per window per IP before rate-limit fires. Default: 60. */
+  rateLimitMaxEvents?: number;
+  /** Optional callback fired whenever an event is flagged or dropped (analytics/audit). */
+  onBotDetected?: (info: BotDetectedInfo) => void;
+}
+
+export interface BotDetectedInfo {
+  siteId: string;
+  ip: string;
+  userAgent: string;
+  layer: 'signature' | 'heuristic' | 'rate-limit';
+  action: 'dropped' | 'flagged';
+  mode: BotFilterMode;
+}
+
 export interface CollectorConfig {
   db: DBConfig;
   adminSecret?: string;
@@ -182,6 +205,7 @@ export interface CollectorConfig {
   cors?: CORSConfig;
   trustProxy?: boolean;
   timestampSanity?: TimestampSanityConfig;
+  botFilter?: BotFilterConfig;
 }
 
 export type TimestampOutOfWindowReason = 'future' | 'past' | 'invalid';
@@ -224,6 +248,7 @@ export interface Site {
   domain?: string;
   allowedOrigins?: string[];
   conversionEvents?: string[];
+  botFilterMode?: BotFilterMode;
   createdAt: string;
   updatedAt: string;
 }
@@ -242,6 +267,7 @@ export interface UpdateSiteRequest {
   domain?: string;
   allowedOrigins?: string[];
   conversionEvents?: string[];
+  botFilterMode?: BotFilterMode | null;
 }
 
 // ─── DB Adapter Interface ───────────────────────────────────
@@ -259,6 +285,27 @@ export interface DBAdapter {
   listUsers(params: UserListParams): Promise<UserListResult>;
   getUserDetail(siteId: string, identifier: string): Promise<UserDetail | null>;
   getUserEvents(siteId: string, identifier: string, params: EventListParams): Promise<EventListResult>;
+
+  /**
+   * Delete every event for a user on a site. Resolves both `userId` (logged-in
+   * identifier) and `visitorId` (anonymous cookie ID) - passes either.
+   * Returns the number of events deleted. Idempotent: returns 0 if nothing matched.
+   */
+  deleteUserEvents(siteId: string, identifier: string): Promise<{ deleted: number }>;
+
+  /**
+   * Count events flagged by the bot filter for a site within a time range.
+   * Used by the dashboard to show how many bot events were filtered.
+   */
+  queryBotStats(
+    siteId: string,
+    range: { from: number; to: number },
+  ): Promise<{
+    total: number;
+    bySignature: number;
+    byHeuristic: number;
+    byRateLimit: number;
+  }>;
 
   // Identity mapping
   upsertIdentity(siteId: string, visitorId: string, userId: string): Promise<void>;
@@ -320,6 +367,11 @@ export interface QueryParams {
   compare?: boolean;
   conversionEvents?: string[];
   timezone?: string;
+  /**
+   * Include events flagged by the bot filter. Defaults to false (bots excluded).
+   * When false, rows where `bot_flag` is non-null are excluded from analytics queries.
+   */
+  includeBots?: boolean;
 }
 
 export interface QueryResult {
@@ -351,6 +403,8 @@ export interface TimeSeriesParams {
   filters?: Record<string, string>;
   conversionEvents?: string[];
   timezone?: string;
+  /** Include events flagged by the bot filter. Defaults to false. */
+  includeBots?: boolean;
 }
 
 export interface TimeSeriesResult {
@@ -379,6 +433,8 @@ export interface EventListParams {
   dateTo?: string;
   limit?: number;
   offset?: number;
+  /** Include events flagged by the bot filter. Defaults to false. */
+  includeBots?: boolean;
 }
 
 export interface EventListItem {
@@ -421,6 +477,8 @@ export interface UserListParams {
   search?: string;
   limit?: number;
   offset?: number;
+  /** Include events flagged by the bot filter when aggregating user data. Defaults to false. */
+  includeBots?: boolean;
 }
 
 export interface UserDetail {
@@ -456,6 +514,8 @@ export interface RetentionParams {
   siteId: string;
   period?: Period;
   weeks?: number;
+  /** Include events flagged by the bot filter. Defaults to false. */
+  includeBots?: boolean;
 }
 
 export interface RetentionCohort {

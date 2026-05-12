@@ -5,6 +5,7 @@ import { useAuth } from './auth';
 import { useTheme } from './hooks/useTheme';
 import { LoginPage } from './components/LoginPage';
 import { SiteSelector } from './components/SiteSelector';
+import { CommandPalette } from './components/CommandPalette';
 import { AnalyticsPage } from './pages/AnalyticsPage';
 import { InsightsPage } from './pages/InsightsPage';
 import { EventsPage } from './pages/EventsPage';
@@ -43,7 +44,7 @@ const navItems: NavItem[] = [
   { to: '/events', label: 'Events', icon: <List className="w-5 h-5" /> },
   { to: '/users', label: 'Users', icon: <Users className="w-5 h-5" /> },
   { to: '/retention', label: 'Retention', icon: <RefreshCcw className="w-5 h-5" /> },
-  { to: '/sites', label: 'Sites', icon: <Settings className="w-5 h-5" /> },
+  { to: '/sites', label: 'Settings', icon: <Settings className="w-5 h-5" /> },
 ];
 
 export function App() {
@@ -71,7 +72,9 @@ export function App() {
   const closeSidebar = () => setSidebarOpen(false);
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex">
+    <>
+      <CommandPalette siteId={siteId} onSiteChange={handleSiteChange} />
+      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex">
       {/* Mobile hamburger button */}
       <button
         onClick={() => setSidebarOpen(true)}
@@ -218,11 +221,12 @@ export function App() {
               path="/retention"
               element={<RetentionPage siteId={siteId} client={client} />}
             />
-            <Route path="/sites" element={<SitesPage />} />
+            <Route path="/sites" element={<SitesPage siteId={siteId} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>
       </main>
-    </div>
+      </div>
+    </>
   );
 }

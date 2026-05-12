@@ -1,7 +1,7 @@
-import type { DBAdapter, EnrichedEvent, QueryParams, QueryResult, QueryDataPoint, Granularity, TimeSeriesParams, TimeSeriesResult, RetentionParams, RetentionResult, RetentionCohort, Site, CreateSiteRequest, UpdateSiteRequest, EventListParams, EventListResult, EventListItem, UserListParams, UserListResult, UserDetail } from '@litemetrics/core';
+import type { DBAdapter, EnrichedEvent, QueryParams, QueryResult, QueryDataPoint, Granularity, TimeSeriesParams, TimeSeriesResult, RetentionParams, RetentionResult, RetentionCohort, Site, CreateSiteRequest, UpdateSiteRequest, EventListParams, EventListResult, EventListItem, UserListParams, UserListResult, UserDetail, BotFilterMode } from '@litemetrics/core';
 import { createClient, type ClickHouseClient } from '@clickhouse/client';
 import { resolvePeriod, previousPeriodRange, autoGranularity, fillBuckets, granularityToDateFormat, getISOWeek, generateSiteId, generateSecretKey, toUTCDate } from './utils';
-import { isValidTimezone } from '../query-helpers.js';
+import { isValidTimezone, aggregateBotStats } from '../query-helpers.js';
 import { normalizeReferrer } from '../normalize-referrer.js';
 
 const EVENTS_TABLE = 'litemetrics_events';
@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS ${EVENTS_TABLE} (
     app_build      Nullable(String),
     sdk_name       LowCardinality(Nullable(String)),
     sdk_version    LowCardinality(Nullable(String)),
+    bot_flag       LowCardinality(Nullable(String)),
     created_at     DateTime64(3) DEFAULT now64(3)
 ) ENGINE = MergeTree()
   PARTITION BY toYYYYMM(timestamp)
@@ -81,6 +82,7 @@ CREATE TABLE IF NOT EXISTS ${SITES_TABLE} (
     domain           Nullable(String),
     allowed_origins  Nullable(String),
     conversion_events Nullable(String),
+    bot_filter_mode  LowCardinality(Nullable(String)),
     created_at       DateTime64(3),
     updated_at       DateTime64(3),
     version          UInt64,
@@ -192,7 +194,24 @@ function channelClassificationExpr(): string {
   )`;
 }
 
-function buildFilterConditions(filters?: Record<string, string>): { conditions: string[]; params: Record<string, unknown> } {
+/**
+ * Returns the bot-filter SQL fragment to append to a WHERE clause.
+ * Default behaviour (`includeBots` falsy) excludes events flagged by the bot filter
+ * by requiring `bot_flag IS NULL`. Pass `includeBots = true` to disable the filter.
+ */
+function botFilterClickhouseSql(includeBots?: boolean): string {
+  return includeBots ? '' : ` AND bot_flag IS NULL`;
+}
+
+function buildFilterConditions(filters?: Record<string, string>, includeBots?: boolean): { conditions: string[]; params: Record<string, unknown> } {
+  const result = buildFilterConditionsInner(filters);
+  if (!includeBots) {
+    result.conditions.unshift('bot_flag IS NULL');
+  }
+  return result;
+}
+
+function buildFilterConditionsInner(filters?: Record<string, string>): { conditions: string[]; params: Record<string, unknown> } {
   if (!filters) return { conditions: [], params: {} };
   const map: Record<string, string> = {
     'geo.country': 'country',
@@ -279,7 +298,9 @@ export class ClickHouseAdapter implements DBAdapter {
     await this.client.command({ query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS app_build Nullable(String)` });
     await this.client.command({ query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS sdk_name LowCardinality(Nullable(String))` });
     await this.client.command({ query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS sdk_version LowCardinality(Nullable(String))` });
+    await this.client.command({ query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS bot_flag LowCardinality(Nullable(String))` });
     await this.client.command({ query: `ALTER TABLE ${SITES_TABLE} ADD COLUMN IF NOT EXISTS type LowCardinality(Nullable(String)) DEFAULT 'web'` });
+    await this.client.command({ query: `ALTER TABLE ${SITES_TABLE} ADD COLUMN IF NOT EXISTS bot_filter_mode LowCardinality(Nullable(String))` });
   }
 
   async close(): Promise<void> {
@@ -334,6 +355,7 @@ export class ClickHouseAdapter implements DBAdapter {
       app_build: e.device?.appBuild ?? null,
       sdk_name: e.device?.sdkName ?? null,
       sdk_version: e.device?.sdkVersion ?? null,
+      bot_flag: e.botFlag ?? null,
     }));
 
     await this.client.insert({
@@ -356,7 +378,7 @@ export class ClickHouseAdapter implements DBAdapter {
       to: toCHDateTime(dateRange.to),
       limit,
     };
-    const filter = buildFilterConditions(q.filters);
+    const filter = buildFilterConditions(q.filters, q.includeBots);
     const filterSql = filter.conditions.length > 0 ? ` AND ${filter.conditions.join(' AND ')}` : '';
 
     let data: QueryDataPoint[] = [];
@@ -904,7 +926,7 @@ export class ClickHouseAdapter implements DBAdapter {
     const bucketFn = this.granularityToClickHouseFunc(granularity, params.timezone);
     const dateFormat = granularityToDateFormat(granularity);
 
-    const filter = buildFilterConditions(params.filters);
+    const filter = buildFilterConditions(params.filters, params.includeBots);
     const filterSql = filter.conditions.length > 0 ? ` AND ${filter.conditions.join(' AND ')}` : '';
     const typeFilter = params.metric === 'pageviews' ? `AND type = 'pageview'` : '';
     const eventsFilter = params.metric === 'events' ? `AND type = 'event'` : '';
@@ -1016,7 +1038,7 @@ export class ClickHouseAdapter implements DBAdapter {
         groupUniqArray(toStartOfWeek(timestamp, 1)) AS active_weeks
       FROM ${EVENTS_TABLE}
       WHERE site_id = {siteId:String}
-        AND timestamp >= {since:String}
+        AND timestamp >= {since:String}${botFilterClickhouseSql(params.includeBots)}
       GROUP BY visitor_id`,
       {
         siteId: params.siteId,
@@ -1077,6 +1099,10 @@ export class ClickHouseAdapter implements DBAdapter {
 
     const conditions: string[] = [`site_id = {siteId:String}`];
     const queryParams: Record<string, unknown> = { siteId: params.siteId, limit, offset };
+
+    if (!params.includeBots) {
+      conditions.push(`bot_flag IS NULL`);
+    }
 
     if (params.type) {
       conditions.push(`type = {type:String}`);
@@ -1159,6 +1185,7 @@ export class ClickHouseAdapter implements DBAdapter {
       queryParams.search = `%${params.search}%`;
     }
 
+    const botSql = botFilterClickhouseSql(params.includeBots);
     const where = conditions.join(' AND ');
 
     const [userRows, countRows] = await Promise.all([
@@ -1197,7 +1224,7 @@ export class ClickHouseAdapter implements DBAdapter {
           anyLast(e.utm_content) AS utm_content
         FROM ${EVENTS_TABLE} e
         LEFT JOIN identity i ON e.visitor_id = i.visitor_id
-        WHERE e.site_id = {siteId:String}${where.includes('ILIKE') ? ` AND (e.visitor_id ILIKE {search:String} OR i.user_id ILIKE {search:String})` : ''}
+        WHERE e.site_id = {siteId:String}${botSql ? ` AND e.bot_flag IS NULL` : ''}${where.includes('ILIKE') ? ` AND (e.visitor_id ILIKE {search:String} OR i.user_id ILIKE {search:String})` : ''}
         GROUP BY group_key
         ORDER BY lastSeen DESC
         LIMIT {limit:UInt32}
@@ -1214,7 +1241,7 @@ export class ClickHouseAdapter implements DBAdapter {
           SELECT if(i.user_id IS NOT NULL AND i.user_id != '', i.user_id, e.visitor_id) AS group_key
           FROM ${EVENTS_TABLE} e
           LEFT JOIN identity i ON e.visitor_id = i.visitor_id
-          WHERE e.site_id = {siteId:String}${where.includes('ILIKE') ? ` AND (e.visitor_id ILIKE {search:String} OR i.user_id ILIKE {search:String})` : ''}
+          WHERE e.site_id = {siteId:String}${botSql ? ` AND e.bot_flag IS NULL` : ''}${where.includes('ILIKE') ? ` AND (e.visitor_id ILIKE {search:String} OR i.user_id ILIKE {search:String})` : ''}
           GROUP BY group_key
         )`,
         queryParams,
@@ -1255,6 +1282,8 @@ export class ClickHouseAdapter implements DBAdapter {
   }
 
   async getUserDetail(siteId: string, identifier: string): Promise<UserDetail | null> {
+    // Note: getUserDetail does not take per-call bot filter options.
+    // The list-level bot filter is applied by listUsers and getUserEvents.
     // Try as userId first (check identity map)
     const visitorIds = await this.getVisitorIdsForUser(siteId, identifier);
     if (visitorIds.length > 0) {
@@ -1288,6 +1317,50 @@ export class ClickHouseAdapter implements DBAdapter {
     }
     // Pure anonymous — single visitorId
     return this.listEvents({ ...params, siteId, visitorId: identifier });
+  }
+
+  async deleteUserEvents(siteId: string, identifier: string): Promise<{ deleted: number }> {
+    // Count first; lightweight DELETE does not return affected rows synchronously.
+    const rows = await this.queryRows<{ n: string | number }>(
+      `SELECT count() AS n FROM ${EVENTS_TABLE}
+       WHERE site_id = {siteId:String}
+         AND (user_id = {id:String} OR visitor_id = {id:String})`,
+      { siteId, id: identifier },
+    );
+    const deleted = Number(rows[0]?.n ?? 0);
+
+    if (deleted > 0) {
+      await this.client.command({
+        query: `
+          DELETE FROM ${EVENTS_TABLE}
+          WHERE site_id = {siteId:String}
+            AND (user_id = {id:String} OR visitor_id = {id:String})
+        `,
+        query_params: { siteId, id: identifier },
+      });
+    }
+    return { deleted };
+  }
+
+  async queryBotStats(
+    siteId: string,
+    range: { from: number; to: number },
+  ): Promise<{ total: number; bySignature: number; byHeuristic: number; byRateLimit: number }> {
+    const rows = await this.queryRows<{ bot_flag: string | null; n: string | number }>(
+      `SELECT bot_flag, count() AS n
+       FROM ${EVENTS_TABLE}
+       WHERE site_id = {siteId:String}
+         AND timestamp >= {from:String}
+         AND timestamp <  {to:String}
+         AND bot_flag IS NOT NULL
+       GROUP BY bot_flag`,
+      {
+        siteId,
+        from: toCHDateTime(new Date(range.from)),
+        to: toCHDateTime(new Date(range.to)),
+      },
+    );
+    return aggregateBotStats(rows);
   }
 
   // ─── Identity Mapping ──────────────────────────────────────
@@ -1392,6 +1465,10 @@ export class ClickHouseAdapter implements DBAdapter {
     const conditions: string[] = [`site_id = {siteId:String}`, `visitor_id IN {visitorIds:Array(String)}`];
     const queryParams: Record<string, unknown> = { siteId, visitorIds, limit, offset };
 
+    if (!params.includeBots) {
+      conditions.push(`bot_flag IS NULL`);
+    }
+
     if (params.type) {
       conditions.push(`type = {type:String}`);
       queryParams.type = params.type;
@@ -1474,6 +1551,7 @@ export class ClickHouseAdapter implements DBAdapter {
         domain: site.domain ?? null,
         allowed_origins: site.allowedOrigins ? JSON.stringify(site.allowedOrigins) : null,
         conversion_events: site.conversionEvents ? JSON.stringify(site.conversionEvents) : null,
+        bot_filter_mode: null,
         created_at: nowCH,
         updated_at: nowCH,
         version: 1,
@@ -1487,7 +1565,7 @@ export class ClickHouseAdapter implements DBAdapter {
 
   async getSite(siteId: string): Promise<Site | null> {
     const rows = await this.queryRows<Record<string, unknown>>(
-      `SELECT site_id, secret_key, name, type, domain, allowed_origins, conversion_events, created_at, updated_at
+      `SELECT site_id, secret_key, name, type, domain, allowed_origins, conversion_events, bot_filter_mode, created_at, updated_at
        FROM ${SITES_TABLE} FINAL
        WHERE site_id = {siteId:String} AND is_deleted = 0`,
       { siteId },
@@ -1497,7 +1575,7 @@ export class ClickHouseAdapter implements DBAdapter {
 
   async getSiteBySecret(secretKey: string): Promise<Site | null> {
     const rows = await this.queryRows<Record<string, unknown>>(
-      `SELECT site_id, secret_key, name, type, domain, allowed_origins, conversion_events, created_at, updated_at
+      `SELECT site_id, secret_key, name, type, domain, allowed_origins, conversion_events, bot_filter_mode, created_at, updated_at
        FROM ${SITES_TABLE} FINAL
        WHERE secret_key = {secretKey:String} AND is_deleted = 0`,
       { secretKey },
@@ -1507,7 +1585,7 @@ export class ClickHouseAdapter implements DBAdapter {
 
   async listSites(): Promise<Site[]> {
     const rows = await this.queryRows<Record<string, unknown>>(
-      `SELECT site_id, secret_key, name, type, domain, allowed_origins, conversion_events, created_at, updated_at
+      `SELECT site_id, secret_key, name, type, domain, allowed_origins, conversion_events, bot_filter_mode, created_at, updated_at
        FROM ${SITES_TABLE} FINAL
        WHERE is_deleted = 0
        ORDER BY created_at DESC`,
@@ -1519,7 +1597,7 @@ export class ClickHouseAdapter implements DBAdapter {
   async updateSite(siteId: string, data: UpdateSiteRequest): Promise<Site | null> {
     // Read current site with version
     const currentRows = await this.queryRows<Record<string, unknown>>(
-      `SELECT site_id, secret_key, name, type, domain, allowed_origins, conversion_events, created_at, updated_at, version
+      `SELECT site_id, secret_key, name, type, domain, allowed_origins, conversion_events, bot_filter_mode, created_at, updated_at, version
        FROM ${SITES_TABLE} FINAL
        WHERE site_id = {siteId:String} AND is_deleted = 0`,
       { siteId },
@@ -1541,6 +1619,10 @@ export class ClickHouseAdapter implements DBAdapter {
     const newConversions = data.conversionEvents !== undefined
       ? (data.conversionEvents.length > 0 ? JSON.stringify(data.conversionEvents) : null)
       : (current.conversion_events ? String(current.conversion_events) : null);
+    // botFilterMode: undefined → keep current; null → clear; string → set
+    const newBotFilterMode = data.botFilterMode !== undefined
+      ? (data.botFilterMode ?? null)
+      : (current.bot_filter_mode ? String(current.bot_filter_mode) : null);
 
     await this.client.insert({
       table: SITES_TABLE,
@@ -1552,6 +1634,7 @@ export class ClickHouseAdapter implements DBAdapter {
         domain: newDomain,
         allowed_origins: newOrigins,
         conversion_events: newConversions,
+        bot_filter_mode: newBotFilterMode,
         created_at: toCHDateTime(String(current.created_at)),
         updated_at: nowCH,
         version: newVersion,
@@ -1568,6 +1651,7 @@ export class ClickHouseAdapter implements DBAdapter {
       domain: newDomain ?? undefined,
       allowedOrigins: newOrigins ? JSON.parse(newOrigins) : undefined,
       conversionEvents: newConversions ? JSON.parse(newConversions) : undefined,
+      botFilterMode: newBotFilterMode ? newBotFilterMode as BotFilterMode : undefined,
       createdAt: String(current.created_at),
       updatedAt: nowISO,
     };
@@ -1575,7 +1659,7 @@ export class ClickHouseAdapter implements DBAdapter {
 
   async deleteSite(siteId: string): Promise<boolean> {
     const currentRows = await this.queryRows<Record<string, unknown>>(
-      `SELECT site_id, secret_key, name, type, domain, allowed_origins, conversion_events, created_at, version
+      `SELECT site_id, secret_key, name, type, domain, allowed_origins, conversion_events, bot_filter_mode, created_at, version
        FROM ${SITES_TABLE} FINAL
        WHERE site_id = {siteId:String} AND is_deleted = 0`,
       { siteId },
@@ -1595,6 +1679,7 @@ export class ClickHouseAdapter implements DBAdapter {
         domain: current.domain ? String(current.domain) : null,
         allowed_origins: current.allowed_origins ? String(current.allowed_origins) : null,
         conversion_events: current.conversion_events ? String(current.conversion_events) : null,
+        bot_filter_mode: current.bot_filter_mode ? String(current.bot_filter_mode) : null,
         created_at: toCHDateTime(String(current.created_at)),
         updated_at: nowCH,
         version: Number(current.version) + 1,
@@ -1608,7 +1693,7 @@ export class ClickHouseAdapter implements DBAdapter {
 
   async regenerateSecret(siteId: string): Promise<Site | null> {
     const currentRows = await this.queryRows<Record<string, unknown>>(
-      `SELECT site_id, secret_key, name, type, domain, allowed_origins, conversion_events, created_at, version
+      `SELECT site_id, secret_key, name, type, domain, allowed_origins, conversion_events, bot_filter_mode, created_at, version
        FROM ${SITES_TABLE} FINAL
        WHERE site_id = {siteId:String} AND is_deleted = 0`,
       { siteId },
@@ -1631,6 +1716,7 @@ export class ClickHouseAdapter implements DBAdapter {
         domain: current.domain ? String(current.domain) : null,
         allowed_origins: current.allowed_origins ? String(current.allowed_origins) : null,
         conversion_events: current.conversion_events ? String(current.conversion_events) : null,
+        bot_filter_mode: current.bot_filter_mode ? String(current.bot_filter_mode) : null,
         created_at: toCHDateTime(String(current.created_at)),
         updated_at: nowCH,
         version: Number(current.version) + 1,
@@ -1647,6 +1733,7 @@ export class ClickHouseAdapter implements DBAdapter {
       domain: current.domain ? String(current.domain) : undefined,
       allowedOrigins: current.allowed_origins ? JSON.parse(String(current.allowed_origins)) : undefined,
       conversionEvents: current.conversion_events ? JSON.parse(String(current.conversion_events)) : undefined,
+      botFilterMode: current.bot_filter_mode ? String(current.bot_filter_mode) as BotFilterMode : undefined,
       createdAt: String(current.created_at),
       updatedAt: nowISO,
     };
@@ -1672,6 +1759,7 @@ export class ClickHouseAdapter implements DBAdapter {
       domain: row.domain ? String(row.domain) : undefined,
       allowedOrigins: row.allowed_origins ? JSON.parse(String(row.allowed_origins)) : undefined,
       conversionEvents: row.conversion_events ? JSON.parse(String(row.conversion_events)) : undefined,
+      botFilterMode: row.bot_filter_mode ? String(row.bot_filter_mode) as BotFilterMode : undefined,
       createdAt: toUTCDate(String(row.created_at)).toISOString(),
       updatedAt: toUTCDate(String(row.updated_at)).toISOString(),
     };

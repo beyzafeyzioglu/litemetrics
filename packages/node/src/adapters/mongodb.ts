@@ -1,7 +1,8 @@
-import type { DBAdapter, EnrichedEvent, QueryParams, QueryResult, QueryDataPoint, TimeSeriesParams, TimeSeriesResult, RetentionParams, RetentionResult, RetentionCohort, Site, CreateSiteRequest, UpdateSiteRequest, EventListParams, EventListResult, EventListItem, UserListParams, UserListResult, UserDetail } from '@litemetrics/core';
+import type { DBAdapter, EnrichedEvent, QueryParams, QueryResult, QueryDataPoint, TimeSeriesParams, TimeSeriesResult, RetentionParams, RetentionResult, RetentionCohort, Site, CreateSiteRequest, UpdateSiteRequest, EventListParams, EventListResult, EventListItem, UserListParams, UserListResult, UserDetail, BotFilterMode } from '@litemetrics/core';
 import { MongoClient, type Collection, type Db } from 'mongodb';
 import { resolvePeriod, previousPeriodRange, autoGranularity, granularityToDateFormat, fillBuckets, getISOWeek, generateSiteId, generateSecretKey } from './utils';
 import { normalizeReferrer } from '../normalize-referrer.js';
+import { aggregateBotStats } from '../query-helpers.js';
 
 /**
  * MongoDB aggregation expression that normalizes the `referrer` field on a
@@ -79,6 +80,7 @@ interface EventDocument {
   app_build: string | null;
   sdk_name: string | null;
   sdk_version: string | null;
+  bot_flag: string | null;
   created_at: Date;
 }
 
@@ -90,6 +92,7 @@ interface SiteDocument {
   domain: string | null;
   allowed_origins: string[] | null;
   conversion_events: string[] | null;
+  bot_filter_mode?: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -238,6 +241,18 @@ function channelClassificationSwitch() {
   };
 }
 
+/**
+ * Returns a Mongo match clause that excludes bot-flagged events when `includeBots`
+ * is not true. T8 writes `bot_flag: e.botFlag ?? null` so non-bot rows have an
+ * explicit `null`. For legacy docs predating T8 (no `bot_flag` field at all),
+ * `{ bot_flag: null }` also matches because Mongo equality with null matches
+ * missing fields.
+ */
+function applyBotFilter(match: Record<string, unknown>, includeBots?: boolean): Record<string, unknown> {
+  if (includeBots) return match;
+  return { ...match, bot_flag: null };
+}
+
 function buildFilterMatch(filters?: Record<string, string>): Record<string, unknown> {
   if (!filters) return {};
   const map: Record<string, string> = {
@@ -310,6 +325,7 @@ export class MongoDBAdapter implements DBAdapter {
       this.collection.createIndex({ site_id: 1, type: 1 }),
       this.collection.createIndex({ site_id: 1, visitor_id: 1 }),
       this.collection.createIndex({ site_id: 1, session_id: 1 }),
+      this.collection.createIndex({ site_id: 1, bot_flag: 1, timestamp: -1 }),
       this.sites.createIndex({ site_id: 1 }, { unique: true }),
       this.sites.createIndex({ secret_key: 1 }),
       this.identityMap.createIndex({ site_id: 1, visitor_id: 1 }, { unique: true }),
@@ -363,6 +379,7 @@ export class MongoDBAdapter implements DBAdapter {
       app_build: e.device?.appBuild ?? null,
       sdk_name: e.device?.sdkName ?? null,
       sdk_version: e.device?.sdkVersion ?? null,
+      bot_flag: e.botFlag ?? null,
       created_at: new Date(),
     }));
 
@@ -374,10 +391,10 @@ export class MongoDBAdapter implements DBAdapter {
     const siteId = q.siteId;
     const limit = q.limit ?? 10;
 
-    const baseMatch = {
+    const baseMatch: Record<string, unknown> = applyBotFilter({
       site_id: siteId,
       timestamp: { $gte: new Date(dateRange.from), $lte: new Date(dateRange.to) },
-    };
+    }, q.includeBots);
     const filterMatch = buildFilterMatch(q.filters);
 
     // Helper: builds initial pipeline stages including optional channel filter
@@ -805,10 +822,10 @@ export class MongoDBAdapter implements DBAdapter {
 
     const granularity = params.granularity ?? autoGranularity(period);
 
-    const baseMatch: Record<string, unknown> = {
+    const baseMatch: Record<string, unknown> = applyBotFilter({
       site_id: params.siteId,
       timestamp: { $gte: new Date(dateRange.from), $lte: new Date(dateRange.to) },
-    };
+    }, params.includeBots);
     const filterMatch = buildFilterMatch(params.filters);
 
     if (params.metric === 'pageviews') {
@@ -892,10 +909,10 @@ export class MongoDBAdapter implements DBAdapter {
 
     const pipeline: object[] = [
       {
-        $match: {
+        $match: applyBotFilter({
           site_id: params.siteId,
           timestamp: { $gte: startDate },
-        },
+        }, params.includeBots),
       },
       {
         $group: {
@@ -959,7 +976,7 @@ export class MongoDBAdapter implements DBAdapter {
     const limit = Math.min(params.limit ?? 50, 200);
     const offset = params.offset ?? 0;
 
-    const match: Record<string, unknown> = { site_id: params.siteId };
+    const match: Record<string, unknown> = applyBotFilter({ site_id: params.siteId }, params.includeBots);
 
     if (params.type) match.type = params.type;
     if (params.eventName) {
@@ -1027,7 +1044,7 @@ export class MongoDBAdapter implements DBAdapter {
     const limit = Math.min(params.limit ?? 50, 200);
     const offset = params.offset ?? 0;
 
-    const match: Record<string, unknown> = { site_id: params.siteId };
+    const match: Record<string, unknown> = applyBotFilter({ site_id: params.siteId }, params.includeBots);
 
     const pipeline: object[] = [
       { $match: match },
@@ -1205,6 +1222,31 @@ export class MongoDBAdapter implements DBAdapter {
     return this.listEventsForVisitorIds(siteId, visitorIds, params);
   }
 
+  async deleteUserEvents(siteId: string, identifier: string): Promise<{ deleted: number }> {
+    const result = await this.collection.deleteMany({
+      site_id: siteId,
+      $or: [{ user_id: identifier }, { visitor_id: identifier }],
+    });
+    return { deleted: result.deletedCount ?? 0 };
+  }
+
+  async queryBotStats(
+    siteId: string,
+    range: { from: number; to: number },
+  ): Promise<{ total: number; bySignature: number; byHeuristic: number; byRateLimit: number }> {
+    const docs = await this.collection.aggregate<{ _id: string | null; n: number }>([
+      {
+        $match: {
+          site_id: siteId,
+          timestamp: { $gte: new Date(range.from), $lt: new Date(range.to) },
+          bot_flag: { $ne: null },
+        },
+      },
+      { $group: { _id: '$bot_flag', n: { $sum: 1 } } },
+    ]).toArray();
+    return aggregateBotStats(docs.map((d) => ({ bot_flag: d._id, n: d.n })));
+  }
+
   private async getMergedUserDetail(siteId: string, userId: string | undefined, visitorIds: string[]): Promise<UserDetail | null> {
     const pipeline: object[] = [
       { $match: { site_id: siteId, visitor_id: { $in: visitorIds } } },
@@ -1300,10 +1342,10 @@ export class MongoDBAdapter implements DBAdapter {
     const limit = Math.min(params.limit ?? 50, 200);
     const offset = params.offset ?? 0;
 
-    const match: Record<string, unknown> = {
+    const match: Record<string, unknown> = applyBotFilter({
       site_id: siteId,
       visitor_id: { $in: visitorIds },
-    };
+    }, params.includeBots);
 
     if (params.type) match.type = params.type;
     if (params.eventName) {
@@ -1397,6 +1439,7 @@ export class MongoDBAdapter implements DBAdapter {
       domain: data.domain ?? null,
       allowed_origins: data.allowedOrigins ?? null,
       conversion_events: data.conversionEvents ?? null,
+      bot_filter_mode: null,
       created_at: now,
       updated_at: now,
     };
@@ -1426,6 +1469,7 @@ export class MongoDBAdapter implements DBAdapter {
     if (data.domain !== undefined) updates.domain = data.domain || null;
     if (data.allowedOrigins !== undefined) updates.allowed_origins = data.allowedOrigins.length > 0 ? data.allowedOrigins : null;
     if (data.conversionEvents !== undefined) updates.conversion_events = data.conversionEvents.length > 0 ? data.conversionEvents : null;
+    if (data.botFilterMode !== undefined) updates.bot_filter_mode = data.botFilterMode ?? null;
 
     const result = await this.sites.findOneAndUpdate(
       { site_id: siteId },
@@ -1464,6 +1508,7 @@ export class MongoDBAdapter implements DBAdapter {
       domain: doc.domain ?? undefined,
       allowedOrigins: doc.allowed_origins ?? undefined,
       conversionEvents: doc.conversion_events ?? undefined,
+      botFilterMode: doc.bot_filter_mode ? (doc.bot_filter_mode as BotFilterMode) : undefined,
       createdAt: doc.created_at.toISOString(),
       updatedAt: doc.updated_at.toISOString(),
     };

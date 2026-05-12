@@ -25,11 +25,25 @@ function resolveDbConfig(): { adapter: DbAdapter; url: string } {
   return { adapter, url };
 }
 
-const PORT = parseInt(process.env.PORT || '3002', 10);
+function intEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const parsed = parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    console.warn(`Warning: ${name}="${raw}" is not a positive integer; falling back to ${fallback}`);
+    return fallback;
+  }
+  return parsed;
+}
+
+const PORT = intEnv('PORT', 3002);
 const { adapter: DB_ADAPTER, url: DATABASE_URL } = resolveDbConfig();
 const ADMIN_SECRET = process.env.ADMIN_SECRET || process.env.LITEMETRICS_ADMIN_SECRET;
 const GEOIP = process.env.GEOIP !== 'false';
 const TRUST_PROXY = process.env.TRUST_PROXY !== 'false';
+const BOT_FILTER_MODE = (process.env.BOT_FILTER_MODE || 'standard') as 'off' | 'standard' | 'strict' | 'shadow';
+const BOT_RATE_WINDOW_MS = intEnv('BOT_RATE_WINDOW_MS', 60_000);
+const BOT_RATE_MAX = intEnv('BOT_RATE_MAX', 60);
 
 // ─── CORS ────────────────────────────────────────────────
 const corsOptions = cors({
@@ -60,6 +74,15 @@ const collector = await createCollector({
   adminSecret: ADMIN_SECRET,
   geoip: GEOIP,
   trustProxy: TRUST_PROXY,
+  botFilter: {
+    defaultMode: BOT_FILTER_MODE,
+    rateLimitWindowMs: BOT_RATE_WINDOW_MS,
+    rateLimitMaxEvents: BOT_RATE_MAX,
+    onBotDetected: (info) => {
+      // Lightweight audit log - kept structured so it's grep-friendly in Railway logs.
+      console.log(`[bot-filter] ${info.action} layer=${info.layer} mode=${info.mode} site=${info.siteId} ip=${info.ip}`);
+    },
+  },
 });
 
 // ─── API Routes ──────────────────────────────────────────

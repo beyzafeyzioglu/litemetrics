@@ -20,9 +20,13 @@ import type {
 import { ClickHouseAdapter } from './adapters/clickhouse';
 import { MongoDBAdapter } from './adapters/mongodb';
 import { PostgresAdapter } from './adapters/postgres';
+import { resolvePeriod } from './adapters/utils';
 import { initGeoIP, resolveGeo } from './geoip';
 import { parseUserAgent } from './useragent';
 import { isBot } from './botfilter';
+import { isHeuristicBot } from './heuristic-bot';
+import { createRateLimiter } from './rate-limit';
+import type { BotFilterMode, BotDetectedInfo } from '@litemetrics/core';
 import { resolveTimestampSanity, sanitizeEventTimestamp } from './timestamp-sanity';
 import { normalizeReferrer } from './normalize-referrer';
 
@@ -58,6 +62,21 @@ export async function createCollector(config: CollectorConfig): Promise<Collecto
   }
 
   const timestampSanity = resolveTimestampSanity(config.timestampSanity);
+
+  const botCfg = config.botFilter ?? {};
+  const defaultBotMode: BotFilterMode = botCfg.defaultMode ?? 'standard';
+  const rateLimiter = createRateLimiter({
+    windowMs: botCfg.rateLimitWindowMs ?? 60_000,
+    maxEvents: botCfg.rateLimitMaxEvents ?? 60,
+  });
+
+  function reportBot(info: BotDetectedInfo): void {
+    botCfg.onBotDetected?.(info);
+  }
+
+  function resolveBotMode(site: { botFilterMode?: BotFilterMode | null } | null | undefined): BotFilterMode {
+    return site?.botFilterMode ?? defaultBotMode;
+  }
 
   // ─── Auth helpers ──────────────────────────────────────
 
@@ -99,7 +118,12 @@ export async function createCollector(config: CollectorConfig): Promise<Collecto
 
   // ─── Event helpers ────────────────────────────────────
 
-  function enrichEvents(events: ClientEvent[], ip: string, userAgent: string): EnrichedEvent[] {
+  function enrichEvents(
+    events: ClientEvent[],
+    ip: string,
+    userAgent: string,
+    botFlag?: 'signature' | 'heuristic' | 'rate-limit',
+  ): EnrichedEvent[] {
     const uaDevice = parseUserAgent(userAgent);
     const now = Date.now();
     const enriched: EnrichedEvent[] = [];
@@ -129,6 +153,7 @@ export async function createCollector(config: CollectorConfig): Promise<Collecto
       }
 
       const enrichedEvent: EnrichedEvent = { ...event, timestamp, ip, geo, device };
+      if (botFlag) enrichedEvent.botFlag = botFlag;
       if (event.type === 'pageview') {
         enrichedEvent.referrer = normalizeReferrer(event.referrer);
       }
@@ -265,18 +290,21 @@ export async function createCollector(config: CollectorConfig): Promise<Collecto
         const siteId = Array.from(siteIds)[0] as string;
 
         const userAgent = req.headers?.['user-agent'] || '';
-
-        // Bot check - silent drop
-        if (isBot(userAgent)) {
-          sendJson(res, 200, { ok: true });
-          return;
-        }
-
+        const acceptLanguage =
+          (typeof req.headers?.['accept-language'] === 'string'
+            ? req.headers['accept-language']
+            : undefined) || undefined;
+        const referer =
+          (typeof req.headers?.referer === 'string' ? req.headers.referer : undefined) ||
+          (typeof req.headers?.referrer === 'string' ? req.headers.referrer : undefined);
         const ip = extractIp(req);
-        const enriched = enrichEvents(payload.events, ip, userAgent);
 
-        // Hostname filtering: check request's Origin/Referer against site's allowedOrigins
+        // Resolve site early - needed for per-site bot mode override
         const site = await db.getSite(siteId);
+        const mode = resolveBotMode(site);
+
+        // Hostname filtering: short-circuit BEFORE the bot pipeline so disallowed
+        // origins don't drain rate-limit slots for legit users on shared NATs.
         if (site?.allowedOrigins && site.allowedOrigins.length > 0) {
           const requestHostname = extractRequestHostname(req);
           if (!requestHostname) {
@@ -289,6 +317,38 @@ export async function createCollector(config: CollectorConfig): Promise<Collecto
             return;
           }
         }
+
+        let botFlag: 'signature' | 'heuristic' | 'rate-limit' | undefined;
+
+        if (mode !== 'off') {
+          if (isBot(userAgent)) botFlag = 'signature';
+          else if ((mode === 'strict' || mode === 'shadow') &&
+                   isHeuristicBot({ userAgent, acceptLanguage, referer })) {
+            botFlag = 'heuristic';
+          } else if ((mode === 'strict' || mode === 'shadow') &&
+                     rateLimiter.check(ip).limited) {
+            botFlag = 'rate-limit';
+          }
+        }
+
+        if (botFlag) {
+          const shouldDrop =
+            mode === 'standard' ? botFlag === 'signature' :
+            mode === 'strict'   ? true :
+            /* shadow / off */    false;
+
+          reportBot({
+            siteId, ip, userAgent, layer: botFlag,
+            action: shouldDrop ? 'dropped' : 'flagged', mode,
+          });
+
+          if (shouldDrop) {
+            sendJson(res, 200, { ok: true });
+            return;
+          }
+        }
+
+        const enriched = enrichEvents(payload.events, ip, userAgent, botFlag);
 
         await processIdentity(enriched);
         await db.insertEvents(enriched);
@@ -334,6 +394,7 @@ export async function createCollector(config: CollectorConfig): Promise<Collecto
             granularity: q.granularity as TimeSeriesParams['granularity'],
             filters: q.filters ? JSON.parse(q.filters as string) : undefined,
             timezone: params.timezone,
+            includeBots: params.includeBots,
           };
           if (tsParams.metric === 'conversions') {
             const site = await db.getSite(params.siteId);
@@ -351,8 +412,24 @@ export async function createCollector(config: CollectorConfig): Promise<Collecto
             siteId: params.siteId,
             period: params.period,
             weeks: q.weeks ? parseInt(q.weeks as string, 10) : undefined,
+            includeBots: params.includeBots,
           };
           const result = await db.queryRetention(retentionParams);
+          sendJson(res, 200, result);
+          return;
+        }
+
+        // Bot stats query - count of events flagged by the bot filter
+        if (params.metric === 'botStats' as any) {
+          const { dateRange } = resolvePeriod({
+            period: params.period,
+            dateFrom: params.dateFrom,
+            dateTo: params.dateTo,
+          });
+          const result = await db.queryBotStats(params.siteId, {
+            from: new Date(dateRange.from).getTime(),
+            to: new Date(dateRange.to).getTime(),
+          });
           sendJson(res, 200, result);
           return;
         }
@@ -494,6 +571,7 @@ export async function createCollector(config: CollectorConfig): Promise<Collecto
           dateTo: q.dateTo as string | undefined,
           limit: q.limit ? parseInt(q.limit as string, 10) : undefined,
           offset: q.offset ? parseInt(q.offset as string, 10) : undefined,
+          includeBots: q.includeBots === 'true' || q.includeBots === '1',
         };
 
         const result = await db.listEvents(params);
@@ -508,9 +586,9 @@ export async function createCollector(config: CollectorConfig): Promise<Collecto
 
   function usersHandler(): (req: any, res: any) => void | Promise<void> {
     return async (req: any, res: any) => {
-      if (setCors(req, res, 'GET, OPTIONS', 'X-Litemetrics-Secret, X-Litemetrics-Admin-Secret')) return;
+      if (setCors(req, res, 'GET, DELETE, OPTIONS', 'X-Litemetrics-Secret, X-Litemetrics-Admin-Secret, X-Litemetrics-Site-Id')) return;
 
-      if (req.method !== 'GET') {
+      if (req.method !== 'GET' && req.method !== 'DELETE') {
         sendJson(res, 405, { ok: false, error: 'Method not allowed' });
         return;
       }
@@ -518,12 +596,18 @@ export async function createCollector(config: CollectorConfig): Promise<Collecto
       try {
         const q = req.query ?? Object.fromEntries(new URL(req.url, 'http://localhost').searchParams);
 
-        if (!q.siteId) {
+        // For DELETE, siteId may come from query or x-litemetrics-site-id header.
+        const headerSiteId = typeof req.headers?.['x-litemetrics-site-id'] === 'string'
+          ? (req.headers['x-litemetrics-site-id'] as string)
+          : undefined;
+        const siteId = (q.siteId as string | undefined) || headerSiteId;
+
+        if (!siteId) {
           sendJson(res, 400, { ok: false, error: 'siteId is required' });
           return;
         }
 
-        const authorized = await isAuthorizedForSite(req, q.siteId as string);
+        const authorized = await isAuthorizedForSite(req, siteId);
         if (!authorized) {
           sendJson(res, 401, { ok: false, error: 'Invalid or missing secret key' });
           return;
@@ -533,8 +617,32 @@ export async function createCollector(config: CollectorConfig): Promise<Collecto
         const url = new URL(req.url || '/', 'http://localhost');
         const pathSegments = url.pathname.split('/').filter(Boolean);
         const usersIdx = pathSegments.indexOf('users');
-        const visitorId = usersIdx >= 0 ? pathSegments[usersIdx + 1] : undefined;
+        const rawVisitorId = usersIdx >= 0 ? pathSegments[usersIdx + 1] : undefined;
         const action = usersIdx >= 0 ? pathSegments[usersIdx + 2] : undefined;
+
+        // Decode once: malformed percent-encoding (e.g. `%ZZ`) is a client error,
+        // not a 500. Return 400 with a clear message rather than letting the
+        // exception bubble to the generic catch.
+        let visitorId: string | undefined;
+        if (rawVisitorId !== undefined) {
+          try {
+            visitorId = decodeURIComponent(rawVisitorId);
+          } catch {
+            sendJson(res, 400, { ok: false, error: 'Invalid visitor id (malformed URI encoding)' });
+            return;
+          }
+        }
+
+        // DELETE /api/users/:visitorId/events
+        if (req.method === 'DELETE') {
+          if (!visitorId || action !== 'events') {
+            sendJson(res, 400, { ok: false, error: 'Bad path' });
+            return;
+          }
+          const result = await db.deleteUserEvents(siteId, visitorId);
+          sendJson(res, 200, { ok: true, deleted: result.deleted });
+          return;
+        }
 
         // GET /api/users/:visitorId/events
         if (visitorId && action === 'events') {
@@ -543,7 +651,7 @@ export async function createCollector(config: CollectorConfig): Promise<Collecto
             : undefined;
 
           const params: EventListParams = {
-            siteId: q.siteId as string,
+            siteId,
             type: q.type as EventListParams['type'],
             eventName: q.eventName as string | undefined,
             eventNames,
@@ -553,15 +661,16 @@ export async function createCollector(config: CollectorConfig): Promise<Collecto
             dateTo: q.dateTo as string | undefined,
             limit: q.limit ? parseInt(q.limit as string, 10) : undefined,
             offset: q.offset ? parseInt(q.offset as string, 10) : undefined,
+            includeBots: q.includeBots === 'true' || q.includeBots === '1',
           };
-          const result = await db.getUserEvents(q.siteId as string, decodeURIComponent(visitorId), params);
+          const result = await db.getUserEvents(siteId, visitorId, params);
           sendJson(res, 200, result);
           return;
         }
 
         // GET /api/users/:visitorId
         if (visitorId) {
-          const user = await db.getUserDetail(q.siteId as string, decodeURIComponent(visitorId));
+          const user = await db.getUserDetail(siteId, visitorId);
           if (!user) {
             sendJson(res, 404, { ok: false, error: 'User not found' });
             return;
@@ -572,10 +681,11 @@ export async function createCollector(config: CollectorConfig): Promise<Collecto
 
         // GET /api/users - list
         const params: UserListParams = {
-          siteId: q.siteId as string,
+          siteId,
           search: q.search as string | undefined,
           limit: q.limit ? parseInt(q.limit as string, 10) : undefined,
           offset: q.offset ? parseInt(q.offset as string, 10) : undefined,
+          includeBots: q.includeBots === 'true' || q.includeBots === '1',
         };
         const result = await db.listUsers(params);
         sendJson(res, 200, result);
