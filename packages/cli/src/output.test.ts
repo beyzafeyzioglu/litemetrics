@@ -1,5 +1,18 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { parseFilters, resolveFormat, outputCSV, nearest, invalidMetric } from './output';
+import {
+  parseFilters,
+  resolveFormat,
+  outputCSV,
+  outputJSON,
+  nearest,
+  invalidMetric,
+  validatePeriod,
+  errorEnvelope,
+  handleError,
+  resolveCompact,
+  setCompactMode,
+  PERIODS,
+} from './output';
 
 describe('parseFilters', () => {
   it('parses key=value pairs', () => {
@@ -106,6 +119,60 @@ describe('outputCSV', () => {
   });
 });
 
+// ─── R6: compact JSON ────────────────────────────────
+
+describe('compact JSON output', () => {
+  const orig = process.env.LITEMETRICS_COMPACT;
+  afterEach(() => {
+    setCompactMode(false);
+    if (orig === undefined) delete process.env.LITEMETRICS_COMPACT;
+    else process.env.LITEMETRICS_COMPACT = orig;
+    vi.restoreAllMocks();
+  });
+
+  it('resolveCompact is true when the flag is passed', () => {
+    delete process.env.LITEMETRICS_COMPACT;
+    expect(resolveCompact(true)).toBe(true);
+  });
+
+  it('resolveCompact honors LITEMETRICS_COMPACT=1 with no flag', () => {
+    process.env.LITEMETRICS_COMPACT = '1';
+    expect(resolveCompact(undefined)).toBe(true);
+  });
+
+  it('resolveCompact honors LITEMETRICS_COMPACT=true with no flag', () => {
+    process.env.LITEMETRICS_COMPACT = 'true';
+    expect(resolveCompact(undefined)).toBe(true);
+  });
+
+  it('resolveCompact ignores other LITEMETRICS_COMPACT values (e.g. 0)', () => {
+    process.env.LITEMETRICS_COMPACT = '0';
+    expect(resolveCompact(undefined)).toBe(false);
+  });
+
+  it('resolveCompact is false by default', () => {
+    delete process.env.LITEMETRICS_COMPACT;
+    expect(resolveCompact(undefined)).toBe(false);
+  });
+
+  it('outputJSON pretty-prints by default (multi-line, 2-space)', () => {
+    setCompactMode(false);
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    outputJSON({ a: 1, b: [2, 3] });
+    expect(spy).toHaveBeenCalledWith(JSON.stringify({ a: 1, b: [2, 3] }, null, 2));
+    expect((spy.mock.calls[0][0] as string)).toContain('\n');
+  });
+
+  it('outputJSON emits a single line when compact mode is on, and it parses', () => {
+    setCompactMode(true);
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    outputJSON({ a: 1, b: [2, 3] });
+    const line = spy.mock.calls[0][0] as string;
+    expect(line).not.toContain('\n');
+    expect(JSON.parse(line)).toEqual({ a: 1, b: [2, 3] });
+  });
+});
+
 describe('nearest', () => {
   const metrics = ['pageviews', 'visitors', 'sessions', 'top_pages', 'top_browsers'];
 
@@ -169,5 +236,239 @@ describe('invalidMetric', () => {
 
     expect(() => invalidMetric('pageview', ['pageviews'], 'table', 'litemetrics metrics')).toThrow('exit');
     expect(errSpy.mock.calls[0][0]).toContain('Did you mean');
+  });
+});
+
+// ─── R1: period validation ───────────────────────────
+
+describe('validatePeriod', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const mockExit = () => {
+    vi.spyOn(process, 'exit').mockImplementation((() => {
+      throw new Error('exit');
+    }) as never);
+    return vi.spyOn(console, 'error').mockImplementation(() => {});
+  };
+
+  it('accepts every value in the enum', () => {
+    mockExit();
+    for (const p of PERIODS) {
+      // custom needs from/to; supply them so only the enum membership is under test
+      expect(() => validatePeriod(p, '2026-01-01', '2026-02-01', 'json')).not.toThrow();
+    }
+  });
+
+  it('accepts an undefined period (commander default applies)', () => {
+    mockExit();
+    expect(() => validatePeriod(undefined, undefined, undefined, 'json')).not.toThrow();
+  });
+
+  it('rejects a value outside the enum with exit 1 and suggestions (json envelope)', () => {
+    const errSpy = mockExit();
+    expect(() => validatePeriod('14d', undefined, undefined, 'json')).toThrow('exit');
+    const payload = JSON.parse(errSpy.mock.calls[0][0] as string);
+    expect(payload.error).toContain('14d');
+    expect(Array.isArray(payload.suggestions)).toBe(true);
+    // '14d' is closest to the day-based tokens
+    expect(payload.suggestions.length).toBeGreaterThan(0);
+  });
+
+  it('rejects an unknown period in table mode with a human-readable line', () => {
+    const errSpy = mockExit();
+    expect(() => validatePeriod('1y', undefined, undefined, 'table')).toThrow('exit');
+    expect(errSpy.mock.calls[0][0]).toContain('Invalid period');
+    expect(errSpy.mock.calls[0][0]).toContain('1y');
+  });
+
+  it('rejects custom without --from', () => {
+    const errSpy = mockExit();
+    expect(() => validatePeriod('custom', undefined, '2026-02-01', 'json')).toThrow('exit');
+    const payload = JSON.parse(errSpy.mock.calls[0][0] as string);
+    expect(payload.error).toContain('custom');
+    expect(payload.error).toContain('--from');
+  });
+
+  it('rejects custom without --to', () => {
+    mockExit();
+    expect(() => validatePeriod('custom', '2026-01-01', undefined, 'json')).toThrow('exit');
+  });
+
+  it('accepts custom with both --from and --to', () => {
+    mockExit();
+    expect(() => validatePeriod('custom', '2026-01-01', '2026-02-01', 'json')).not.toThrow();
+  });
+});
+
+// ─── R5: error envelope + strict format ──────────────
+
+describe('errorEnvelope', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('emits {error} JSON and exits 1 in json mode', () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
+      throw new Error('exit');
+    }) as never);
+    expect(() => errorEnvelope('boom', 'json')).toThrow('exit');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(JSON.parse(errSpy.mock.calls[0][0] as string)).toEqual({ error: 'boom' });
+  });
+
+  it('includes suggestions only when non-empty', () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(process, 'exit').mockImplementation((() => {
+      throw new Error('exit');
+    }) as never);
+    expect(() => errorEnvelope('boom', 'json', { suggestions: ['a', 'b'] })).toThrow('exit');
+    expect(JSON.parse(errSpy.mock.calls[0][0] as string)).toEqual({ error: 'boom', suggestions: ['a', 'b'] });
+  });
+
+  it('prints a prose line in table mode', () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(process, 'exit').mockImplementation((() => {
+      throw new Error('exit');
+    }) as never);
+    expect(() => errorEnvelope('boom', 'table')).toThrow('exit');
+    expect(errSpy.mock.calls[0][0]).toBe('Error: boom');
+  });
+});
+
+// ─── R4: error transparency ──────────────────────────
+
+describe('handleError', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const mockExit = () => {
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
+      throw new Error('exit');
+    }) as never);
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    return { exitSpy, errSpy };
+  };
+
+  it('surfaces the server error message (response.data.error) over the axios message, with status', () => {
+    const { errSpy } = mockExit();
+    const axiosErr = {
+      message: 'Request failed with status code 401',
+      response: { status: 401, data: { ok: false, error: 'Unauthorized - invalid or missing admin secret' } },
+    };
+    expect(() => handleError(axiosErr, 'json')).toThrow('exit');
+    const payload = JSON.parse(errSpy.mock.calls[0][0] as string);
+    expect(payload.error).toBe('Unauthorized - invalid or missing admin secret');
+    expect(payload.status).toBe(401);
+  });
+
+  it('falls back to response.data.message when there is no data.error', () => {
+    const { errSpy } = mockExit();
+    const axiosErr = {
+      message: 'Request failed with status code 404',
+      response: { status: 404, data: { message: 'Site not found' } },
+    };
+    expect(() => handleError(axiosErr, 'json')).toThrow('exit');
+    const payload = JSON.parse(errSpy.mock.calls[0][0] as string);
+    expect(payload.error).toBe('Site not found');
+    expect(payload.status).toBe(404);
+  });
+
+  it('prefers data.error when BOTH data.error and data.message are present', () => {
+    const { errSpy } = mockExit();
+    const axiosErr = {
+      message: 'Request failed with status code 400',
+      response: { status: 400, data: { error: 'the real cause', message: 'generic' } },
+    };
+    expect(() => handleError(axiosErr, 'json')).toThrow('exit');
+    expect(JSON.parse(errSpy.mock.calls[0][0] as string).error).toBe('the real cause');
+  });
+
+  it('falls back to err.message for a network error with no response (no status field)', () => {
+    const { errSpy } = mockExit();
+    const netErr = new Error('connect ECONNREFUSED 127.0.0.1:3000');
+    expect(() => handleError(netErr, 'json')).toThrow('exit');
+    const payload = JSON.parse(errSpy.mock.calls[0][0] as string);
+    expect(payload.error).toBe('connect ECONNREFUSED 127.0.0.1:3000');
+    expect(payload).not.toHaveProperty('status');
+  });
+
+  it('surfaces err.code when a network error has a blank message (dual-stack ECONNREFUSED)', () => {
+    const { errSpy } = mockExit();
+    // Real axios ECONNREFUSED against a host that resolves to both ::1 and
+    // 127.0.0.1 (e.g. localhost) wraps a Node AggregateError: the AxiosError is
+    // an Error instance whose `message` is '' but whose `code` carries the useful
+    // signal. A raw err.message fallback would emit {"error":""}.
+    const netErr = Object.assign(new Error(''), { code: 'ECONNREFUSED' });
+    expect(() => handleError(netErr, 'json')).toThrow('exit');
+    const payload = JSON.parse(errSpy.mock.calls[0][0] as string);
+    expect(payload.error).toBe('ECONNREFUSED');
+    expect(payload).not.toHaveProperty('status');
+  });
+
+  it('prefers a populated err.message over err.code', () => {
+    const { errSpy } = mockExit();
+    const netErr = Object.assign(new Error('connect ETIMEDOUT 10.0.0.1:443'), { code: 'ETIMEDOUT' });
+    expect(() => handleError(netErr, 'json')).toThrow('exit');
+    expect(JSON.parse(errSpy.mock.calls[0][0] as string).error).toBe('connect ETIMEDOUT 10.0.0.1:443');
+  });
+
+  it('surfaces the server message and HTTP status in table mode too', () => {
+    const { errSpy } = mockExit();
+    const axiosErr = {
+      message: 'Request failed with status code 401',
+      response: { status: 401, data: { error: 'Unauthorized - invalid or missing admin secret' } },
+    };
+    expect(() => handleError(axiosErr, 'table')).toThrow('exit');
+    const line = errSpy.mock.calls[0][0] as string;
+    expect(line).toContain('Unauthorized - invalid or missing admin secret');
+    expect(line).toContain('401');
+    expect(() => JSON.parse(line)).toThrow();
+  });
+
+  it('exits 1', () => {
+    const { exitSpy } = mockExit();
+    expect(() => handleError(new Error('boom'), 'json')).toThrow('exit');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it('ignores a blank server data.error and keeps the axios message', () => {
+    const { errSpy } = mockExit();
+    // real AxiosError is an Error instance; a blank data.error must not win
+    const axiosErr = Object.assign(new Error('Request failed with status code 500'), {
+      response: { status: 500, data: { error: '' } },
+    });
+    expect(() => handleError(axiosErr, 'json')).toThrow('exit');
+    const payload = JSON.parse(errSpy.mock.calls[0][0] as string);
+    expect(payload.error).toBe('Request failed with status code 500');
+    expect(payload.status).toBe(500);
+  });
+});
+
+describe('resolveFormat (strict)', () => {
+  const originalEnv = process.env.LITEMETRICS_FORMAT;
+  const originalIsTTY = process.stdout.isTTY;
+
+  afterEach(() => {
+    process.env.LITEMETRICS_FORMAT = originalEnv;
+    Object.defineProperty(process.stdout, 'isTTY', { value: originalIsTTY, writable: true });
+    vi.restoreAllMocks();
+  });
+
+  it('rejects an invalid explicit format with exit 1 and an envelope', () => {
+    delete process.env.LITEMETRICS_FORMAT;
+    Object.defineProperty(process.stdout, 'isTTY', { value: false, writable: true });
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
+      throw new Error('exit');
+    }) as never);
+    expect(() => resolveFormat('xml')).toThrow('exit');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    // non-TTY, no env → error is emitted as JSON
+    const payload = JSON.parse(errSpy.mock.calls[0][0] as string);
+    expect(payload.error).toContain('xml');
   });
 });
