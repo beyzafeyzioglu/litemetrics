@@ -1,6 +1,6 @@
 {
   "name": "@litemetrics/cli",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "CLI tool for Litemetrics analytics - query data, manage sites, AI-agent friendly",
   "license": "MIT",
   "type": "module",
@@ -22,7 +22,7 @@
   },
   "dependencies": {
     "@litemetrics/client": "^0.4.0",
-    "@litemetrics/core": "^0.6.0",
+    "@litemetrics/core": "^0.6.1",
     "commander": "^12"
   },
   "devDependencies": {

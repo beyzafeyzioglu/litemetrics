@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.1 - fix: cli ↔ core version alignment
+
+### `@litemetrics/cli` (0.6.0 -> 0.6.1)
+
+**Fix broken publish.** `cli@0.6.0` imports `FILTER_KEYS` from `@litemetrics/core` but declared `@litemetrics/core@^0.6.0` and shipped a nested `core@0.6.0` — a version that predates that export. A fresh global install (`bun install -g @litemetrics/cli`) therefore crashed on startup with `SyntaxError: The requested module '@litemetrics/core' does not provide an export named 'FILTER_KEYS'`; bumping only the top-level `core` did not help because the CLI resolved its own nested copy. Bumped the dependency to `@litemetrics/core@^0.6.1` (the release that adds `FILTER_KEYS`) so a fresh install pulls a compatible core. No behavior change beyond fixing startup.
+
 ## 0.7.0 - Agent-UX Hardening
 
 Hardens the CLI as an AI-agent query surface: strict input validation, hard output caps, transparent errors, compact JSON, and one-call multi-site querying.
