@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.0 - Agent-UX Hardening
+## 0.7.0 - Agent-UX Hardening
 
 Hardens the CLI as an AI-agent query surface: strict input validation, hard output caps, transparent errors, compact JSON, and one-call multi-site querying.
 
