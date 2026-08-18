@@ -5,7 +5,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
 import { createCollectSummary } from './collect-summary';
-import { formatAccessLine, formatBotFilterLine } from './log-format';
+import { formatAccessLine, formatBotFilterLine, formatSiteTypeMismatchLine } from './log-format';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -160,6 +160,13 @@ const collector = await createCollector({
         action: info.action,
       });
       if (shouldLogDetail) console.log(formatBotFilterLine(info));
+    },
+    onSiteTypeMismatch: (info) => {
+      // This site sends app SDK events but is not typed as an app. Unless its mode is
+      // `off` it is still filtered as browser traffic and keeps losing its Android
+      // events; either way the dashboard shows it as a web site. Fix is one call:
+      // PUT /api/sites/<id> {"type":"app"}.
+      console.warn(formatSiteTypeMismatchLine(info));
     },
   },
 });

@@ -1,1 +1,1 @@
-export default ['packages/node', 'packages/client', 'packages/cli', 'packages/tracker', 'apps/server'];
+export default ['packages/node', 'packages/client', 'packages/cli', 'packages/tracker', 'packages/react-native', 'apps/server'];

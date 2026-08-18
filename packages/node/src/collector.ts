@@ -78,6 +78,22 @@ export async function createCollector(config: CollectorConfig): Promise<Collecto
     return site?.botFilterMode ?? defaultBotMode;
   }
 
+  // Only ever holds ids of sites that exist, so an unknown siteId from a request
+  // body cannot grow it.
+  const reportedTypeMismatches = new Set<string>();
+
+  function reportSiteTypeMismatch(site: Site, events: ClientEvent[], mode: BotFilterMode): void {
+    if (!botCfg.onSiteTypeMismatch) return;
+    if (reportedTypeMismatches.has(site.siteId)) return;
+    // The body is untyped JSON: only a non-empty string counts as a declared platform.
+    const platform = events
+      .map((event) => event.mobile?.platform as unknown)
+      .find((value): value is string => typeof value === 'string' && value.length > 0);
+    if (!platform) return;
+    reportedTypeMismatches.add(site.siteId);
+    botCfg.onSiteTypeMismatch({ siteId: site.siteId, siteType: site.type, platform, mode });
+  }
+
   // ─── Auth helpers ──────────────────────────────────────
 
   function isAdmin(req: any): boolean {
@@ -322,19 +338,35 @@ export async function createCollector(config: CollectorConfig): Promise<Collecto
         // reason would fall through the guard below and silently skip the drop.
         let bot: { layer: 'signature' | 'heuristic' | 'rate-limit'; reason: BotDropReason } | undefined;
 
+        // The signature and heuristic layers are browser heuristics: one matches a
+        // User-Agent against a crawler list, the other flags a request with no
+        // browser, engine, Accept-Language or Referer. An app SDK has none of those
+        // by construction - on Android, React Native's fetch goes out through OkHttp
+        // with `User-Agent: okhttp/<version>`, which isbot matches - so on an app
+        // site both layers only ever misfire. Rate limiting still applies: abuse of
+        // an app site id is a volume problem, not a User-Agent one.
+        const isAppSite = site?.type === 'app';
+        if (site && !isAppSite) reportSiteTypeMismatch(site, payload.events, mode);
+
         if (mode !== 'off') {
-          const signature = classifyUserAgent(userAgent);
-          if (signature) {
-            bot = { layer: 'signature', reason: signature };
-          } else if (mode === 'strict' || mode === 'shadow') {
-            // Same short-circuit the original else-if chain already had: when the
-            // heuristic layer fires, rateLimiter.check is never reached, so a
-            // heuristic hit consumes no rate-limit slot.
-            const heuristic = classifyHeuristicBot({ userAgent, acceptLanguage, referer });
-            if (heuristic) {
-              bot = { layer: 'heuristic', reason: heuristic };
-            } else if (rateLimiter.check(ip).limited) {
+          if (isAppSite) {
+            if ((mode === 'strict' || mode === 'shadow') && rateLimiter.check(ip).limited) {
               bot = { layer: 'rate-limit', reason: 'rate-limit' };
+            }
+          } else {
+            const signature = classifyUserAgent(userAgent);
+            if (signature) {
+              bot = { layer: 'signature', reason: signature };
+            } else if (mode === 'strict' || mode === 'shadow') {
+              // Same short-circuit the original else-if chain already had: when the
+              // heuristic layer fires, rateLimiter.check is never reached, so a
+              // heuristic hit consumes no rate-limit slot.
+              const heuristic = classifyHeuristicBot({ userAgent, acceptLanguage, referer });
+              if (heuristic) {
+                bot = { layer: 'heuristic', reason: heuristic };
+              } else if (rateLimiter.check(ip).limited) {
+                bot = { layer: 'rate-limit', reason: 'rate-limit' };
+              }
             }
           }
         }
