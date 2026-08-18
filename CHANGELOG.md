@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased - App traffic is no longer filtered as browser traffic
+## Unreleased
 
-Android events from React Native apps were never stored: RN's `fetch` sends OkHttp's default `okhttp/<version>` User-Agent on Android, `isbot` matches any bare `name/version` token, and the signature layer dropped every batch in `standard` mode. Measured across four app sites: 6053 events in 90 days, zero Android.
+**App traffic is no longer filtered as browser traffic.** Android events from React Native apps were never stored: RN's `fetch` sends OkHttp's default `okhttp/<version>` User-Agent on Android, `isbot` matches any bare `name/version` token, and the signature layer dropped every batch in `standard` mode. Measured across four app sites: 6053 events in 90 days, zero Android.
 
 ### `@litemetrics/node` (0.7.0 -> next)
 
@@ -23,6 +23,22 @@ Android events from React Native apps were never stored: RN's `fetch` sends OkHt
 ### Dashboard
 
 - Bot Filtering mode hints in site settings describe what each mode actually does on an `app` site (rate limit only).
+
+### `@litemetrics/tracker`
+
+**`destroy()` is now a hard stop.** It still flushes whatever is already queued, then refuses everything afterwards: `send()` and `flush()` become no-ops, and a `fetch` that rejects after teardown no longer retries through `sendBeacon`. Previously `destroy()` only cleared the flush interval, so a send whose visitor id was still resolving fired a request *after* teardown, for example after `@litemetrics/react` unmounts its provider.
+
+**Trade-off:** an event tracked in the moments before `destroy()`, whose visitor id has not resolved yet, is now dropped rather than delivered late. For an analytics SDK a request escaping a torn-down instance is worse than a lost data point, and `destroy()` stays synchronous.
+
+**Listener cleanup.** `destroy()` unregisters the `visibilitychange` and `pagehide` handlers it registered. Before this, every `createTracker` leaked two listeners for the lifetime of the page, so an SPA that mounts a provider per route grew listeners without bound.
+
+**Visitor id resolved at construction.** Previously it was computed on the first `track()`, and until that hash landed a send sat pending, which is precisely the window `destroy()` now drops. Doing it up front narrows the window to the moments right after page load.
+
+### `@litemetrics/react`
+
+**Fixes a silent provider under React StrictMode.** `LitemetricsProvider` destroys its tracker on unmount but kept the instance in a ref, and StrictMode remounts the same component in development, so the remounted provider handed every consumer a destroyed tracker. Combined with the hard stop above, that meant the app reported its first pageview and then went silent, with no error anywhere.
+
+The context now carries a stable facade that resolves the tracker on each call rather than capturing one, so a remount rebuilds it. A genuine unmount is tracked separately, so a stale `useLitemetrics()` handle cannot revive tracking after the provider is gone. `useLitemetrics()` still returns a usable object on the first render: this is not a breaking change.
 
 ## 0.7.1 - fix: cli ↔ core version alignment
 

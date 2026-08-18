@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { createTracker } from './tracker';
+import { destroyOpenTrackers, makeTracker } from './test-utils';
 
 // jsdom doesn't implement sendBeacon; define a stub so vi.spyOn can attach.
 if (typeof navigator !== 'undefined' && !('sendBeacon' in navigator)) {
@@ -11,6 +11,9 @@ if (typeof navigator !== 'undefined' && !('sendBeacon' in navigator)) {
 }
 
 afterEach(() => {
+  // Destroy before restoring mocks. A send whose visitor id is still resolving
+  // would otherwise land on the NEXT test's fetch spy - the leak behind #13.
+  destroyOpenTrackers();
   // Reset webdriver flag between tests
   Object.defineProperty(navigator, 'webdriver', { value: false, configurable: true });
   // Clear opt-out / DNT state so previous tests don't leak into the next.
@@ -30,7 +33,7 @@ describe('createTracker - webdriver short-circuit', () => {
 
     // batchSize: 1 forces every event to flush immediately, so the spies catch
     // any send the real tracker would do, exposing absence of the short-circuit.
-    const tracker = createTracker({
+    const tracker = makeTracker({
       siteId: 'site_test',
       endpoint: 'https://x.test/collect',
       batchSize: 1,
@@ -50,7 +53,7 @@ describe('createTracker - webdriver short-circuit', () => {
   it('creates a real tracker when navigator.webdriver is false', () => {
     Object.defineProperty(navigator, 'webdriver', { value: false, configurable: true });
 
-    const tracker = createTracker({
+    const tracker = makeTracker({
       siteId: 'site_test',
       endpoint: 'https://x.test/collect',
       autoTrack: false,
@@ -70,7 +73,7 @@ describe('createTracker - webdriver short-circuit', () => {
       .spyOn(globalThis, 'fetch')
       .mockResolvedValue(new Response(null, { status: 204 }));
 
-    const tracker = createTracker({
+    const tracker = makeTracker({
       siteId: 'site_test',
       endpoint: 'https://x.test/collect',
       autoTrack: false,
@@ -79,11 +82,14 @@ describe('createTracker - webdriver short-circuit', () => {
     });
 
     tracker.track('real_event');
-    await new Promise((r) => setTimeout(r, 0));
-    // Real tracker fires at least one network call (no-op tracker fires zero).
-    // sendBeacon is the jsdom-stubbed Mock from beforeEach; fetch is spied above.
-    const beaconCalls = (navigator.sendBeacon as unknown as { mock?: { calls: unknown[] } }).mock?.calls?.length ?? 0;
-    expect(fetchSpy.mock.calls.length + beaconCalls).toBeGreaterThan(0);
+    // The send completes only after getVisitorId() resolves, which awaits
+    // crypto.subtle.digest on the threadpool - one macrotask when the machine is
+    // idle, more when it is loaded. Wait for the flush itself, not for a tick.
+    await vi.waitFor(() => {
+      // Real tracker fires at least one network call (no-op tracker fires zero).
+      const beaconCalls = (navigator.sendBeacon as unknown as { mock?: { calls: unknown[] } }).mock?.calls?.length ?? 0;
+      expect(fetchSpy.mock.calls.length + beaconCalls).toBeGreaterThan(0);
+    });
     expect(() => tracker.destroy()).not.toThrow();
   });
 
@@ -96,7 +102,7 @@ describe('createTracker - webdriver short-circuit', () => {
       .mockResolvedValue(new Response(null, { status: 204 }));
     const sendBeacon = vi.spyOn(navigator, 'sendBeacon').mockReturnValue(true);
 
-    const tracker = createTracker({
+    const tracker = makeTracker({
       siteId: 'site_test',
       endpoint: 'https://x.test/collect',
       batchSize: 1,
