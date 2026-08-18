@@ -23,10 +23,10 @@ import { PostgresAdapter } from './adapters/postgres';
 import { resolvePeriod } from './adapters/utils';
 import { initGeoIP, resolveGeo } from './geoip';
 import { parseUserAgent } from './useragent';
-import { isBot } from './botfilter';
-import { isHeuristicBot } from './heuristic-bot';
+import { classifyUserAgent } from './botfilter';
+import { classifyHeuristicBot } from './heuristic-bot';
 import { createRateLimiter } from './rate-limit';
-import type { BotFilterMode, BotDetectedInfo } from '@litemetrics/core';
+import type { BotFilterMode, BotDetectedInfo, BotDropReason } from '@litemetrics/core';
 import { resolveTimestampSanity, sanitizeEventTimestamp } from './timestamp-sanity';
 import { normalizeReferrer } from './normalize-referrer';
 
@@ -318,27 +318,35 @@ export async function createCollector(config: CollectorConfig): Promise<Collecto
           }
         }
 
-        let botFlag: 'signature' | 'heuristic' | 'rate-limit' | undefined;
+        // Layer and reason are one value so they cannot drift apart: a layer without a
+        // reason would fall through the guard below and silently skip the drop.
+        let bot: { layer: 'signature' | 'heuristic' | 'rate-limit'; reason: BotDropReason } | undefined;
 
         if (mode !== 'off') {
-          if (isBot(userAgent)) botFlag = 'signature';
-          else if ((mode === 'strict' || mode === 'shadow') &&
-                   isHeuristicBot({ userAgent, acceptLanguage, referer })) {
-            botFlag = 'heuristic';
-          } else if ((mode === 'strict' || mode === 'shadow') &&
-                     rateLimiter.check(ip).limited) {
-            botFlag = 'rate-limit';
+          const signature = classifyUserAgent(userAgent);
+          if (signature) {
+            bot = { layer: 'signature', reason: signature };
+          } else if (mode === 'strict' || mode === 'shadow') {
+            // Same short-circuit the original else-if chain already had: when the
+            // heuristic layer fires, rateLimiter.check is never reached, so a
+            // heuristic hit consumes no rate-limit slot.
+            const heuristic = classifyHeuristicBot({ userAgent, acceptLanguage, referer });
+            if (heuristic) {
+              bot = { layer: 'heuristic', reason: heuristic };
+            } else if (rateLimiter.check(ip).limited) {
+              bot = { layer: 'rate-limit', reason: 'rate-limit' };
+            }
           }
         }
 
-        if (botFlag) {
+        if (bot) {
           const shouldDrop =
-            mode === 'standard' ? botFlag === 'signature' :
+            mode === 'standard' ? bot.layer === 'signature' :
             mode === 'strict'   ? true :
             /* shadow / off */    false;
 
           reportBot({
-            siteId, ip, userAgent, layer: botFlag,
+            siteId, ip, userAgent, layer: bot.layer, reason: bot.reason,
             action: shouldDrop ? 'dropped' : 'flagged', mode,
           });
 
@@ -348,7 +356,7 @@ export async function createCollector(config: CollectorConfig): Promise<Collecto
           }
         }
 
-        const enriched = enrichEvents(payload.events, ip, userAgent, botFlag);
+        const enriched = enrichEvents(payload.events, ip, userAgent, bot?.layer);
 
         await processIdentity(enriched);
         await db.insertEvents(enriched);
