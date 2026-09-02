@@ -1,6 +1,6 @@
 import type { LitemetricsInstance } from './tracker';
 
-const ATTR_EVENT = 'data-litemetrics-event';
+export const ATTR_EVENT = 'data-litemetrics-event';
 const ATTR_PREFIX = 'data-litemetrics-event-';
 
 /**

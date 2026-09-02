@@ -1,4 +1,16 @@
 import type { LitemetricsInstance } from './tracker';
+import { ATTR_EVENT } from './attributes';
+
+/**
+ * True when the click lands on (or inside) an element labelled with
+ * data-litemetrics-event. Such a click is the attribute handler's: it fires the
+ * declared event, and the auto link/button branches must stay silent — one
+ * physical click, one recorded event (#18). Same ancestor walk the attribute
+ * handler does, so the two always agree on ownership.
+ */
+function hasDeclaredEvent(target: HTMLElement | null): boolean {
+  return !!target?.closest?.(`[${ATTR_EVENT}]`);
+}
 
 export type PageCallback = (url: string, referrer?: string) => void;
 
@@ -83,6 +95,7 @@ export function initLinkClickTracking(
   options: { trackInternal: boolean; trackOutbound: boolean; trackFileDownloads: boolean },
 ): () => void {
   function handleClick(e: MouseEvent) {
+    if (hasDeclaredEvent(e.target as HTMLElement | null)) return;
     const link = (e.target as HTMLElement)?.closest?.('a') as HTMLAnchorElement | null;
     if (!link) return;
 
@@ -128,6 +141,7 @@ export function initButtonClickTracking(instance: LitemetricsInstance): () => vo
   function handleClick(e: MouseEvent) {
     const target = e.target as HTMLElement | null;
     if (!target) return;
+    if (hasDeclaredEvent(target)) return;
     const button = target.closest('button, [role="button"], input[type="button"], input[type="submit"]') as HTMLElement | null;
     if (!button) return;
     if (button.closest('a')) return;
