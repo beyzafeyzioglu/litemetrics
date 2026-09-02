@@ -23,6 +23,7 @@ export const EVENT_BASE_COLUMNS = [
   'device_type', 'browser', 'os', 'language', 'timezone',
   'screen_width', 'screen_height',
   'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+  'gclid', 'gbraid', 'wbraid', 'fbclid', 'fbp',
   'ip',
   'os_version', 'device_model', 'device_brand',
   'app_version', 'app_build', 'sdk_name', 'sdk_version',
@@ -68,6 +69,11 @@ CREATE TABLE IF NOT EXISTS ${EVENTS_TABLE} (
     utm_campaign      text,
     utm_term          text,
     utm_content       text,
+    gclid             text,
+    gbraid            text,
+    wbraid            text,
+    fbclid            text,
+    fbp               text,
     ip                text,
     os_version        text,
     device_model      text,
@@ -94,6 +100,14 @@ const CREATE_EVENTS_INDEXES: string[] = [
 
 // Idempotent column add for upgrades from a previous schema without bot_flag.
 const ALTER_EVENTS_ADD_BOT_FLAG = `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS bot_flag text`;
+
+// Idempotent column adds for upgrades from a previous schema without ad click IDs.
+const ALTER_EVENTS_ADD_AD_CLICK_IDS = `ALTER TABLE ${EVENTS_TABLE}
+  ADD COLUMN IF NOT EXISTS gclid text,
+  ADD COLUMN IF NOT EXISTS gbraid text,
+  ADD COLUMN IF NOT EXISTS wbraid text,
+  ADD COLUMN IF NOT EXISTS fbclid text,
+  ADD COLUMN IF NOT EXISTS fbp text`;
 
 const CREATE_SITES_TABLE = `
 CREATE TABLE IF NOT EXISTS ${SITES_TABLE} (
@@ -364,6 +378,7 @@ export class PostgresAdapter implements DBAdapter {
 
       await client.query(CREATE_EVENTS_TABLE);
       await client.query(ALTER_EVENTS_ADD_BOT_FLAG);
+      await client.query(ALTER_EVENTS_ADD_AD_CLICK_IDS);
       for (const sql of CREATE_EVENTS_INDEXES) await client.query(sql);
 
       await client.query(CREATE_SITES_TABLE);
@@ -388,10 +403,10 @@ export class PostgresAdapter implements DBAdapter {
     if (events.length === 0) return;
 
     // Postgres wire protocol caps bind parameters per statement at 65,535 (uint16).
-    // With 43 columns/row, max safe rows-per-INSERT = floor(65535/43) = 1524. Use 1400
+    // With 48 columns/row, max safe rows-per-INSERT = floor(65535/48) = 1365. Use 1300
     // for a margin to allow callers to send arbitrarily-large batches without
     // having to know about this limit.
-    const CHUNK_SIZE = 1400;
+    const CHUNK_SIZE = 1300;
     if (events.length > CHUNK_SIZE) {
       for (let i = 0; i < events.length; i += CHUNK_SIZE) {
         await this.insertEvents(events.slice(i, i + CHUNK_SIZE));
@@ -440,6 +455,11 @@ export class PostgresAdapter implements DBAdapter {
         e.utm?.campaign ?? null,
         e.utm?.term ?? null,
         e.utm?.content ?? null,
+        e.ads?.gclid ?? null,
+        e.ads?.gbraid ?? null,
+        e.ads?.wbraid ?? null,
+        e.ads?.fbclid ?? null,
+        e.ads?.fbp ?? null,
         e.ip ?? null,
         e.device?.osVersion ?? null,
         e.device?.deviceModel ?? null,

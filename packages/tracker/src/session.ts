@@ -4,8 +4,9 @@ import {
   STORAGE_KEY_VISITOR,
   STORAGE_KEY_LAST_ACTIVE,
   STORAGE_KEY_USER,
+  STORAGE_KEY_ADS,
 } from '@litemetrics/core';
-import { generateId, hashString, getDayString, now } from './utils';
+import { generateId, hashString, getDayString, now, type ClickIds } from './utils';
 
 function storageGet(key: string): string | null {
   try {
@@ -81,6 +82,29 @@ export class SessionManager {
     storageSet(STORAGE_KEY_USER, userId);
   }
 
+  /**
+   * Persist ad click IDs captured from the landing URL, bound to the current
+   * session. A later landing with fresh IDs overwrites; the stored values die
+   * with the session (unlike the visitor ID, which rotates daily for privacy —
+   * these are session-scoped join keys, not identity).
+   */
+  saveClickIds(ids: ClickIds): void {
+    storageSet(STORAGE_KEY_ADS, JSON.stringify({ sid: this._sessionId, ids }));
+  }
+
+  /** Click IDs captured earlier in THIS session; undefined for other sessions. */
+  getClickIds(): ClickIds | undefined {
+    const raw = storageGet(STORAGE_KEY_ADS);
+    if (!raw) return undefined;
+    try {
+      const parsed = JSON.parse(raw) as { sid?: string; ids?: ClickIds };
+      if (parsed.sid !== this._sessionId || !parsed.ids) return undefined;
+      return parsed.ids;
+    } catch {
+      return undefined;
+    }
+  }
+
   reset(): void {
     this._sessionId = generateId();
     this._visitorId = null;
@@ -89,6 +113,7 @@ export class SessionManager {
     storageRemove(STORAGE_KEY_VISITOR);
     storageRemove(STORAGE_KEY_USER);
     storageRemove(STORAGE_KEY_LAST_ACTIVE);
+    storageRemove(STORAGE_KEY_ADS);
   }
 
   private _getOrCreateSession(): string {

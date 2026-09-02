@@ -76,6 +76,7 @@ export interface ClientContext {
   timezone?: string;
   connection?: ConnectionInfo;
   utm?: UTMParams;
+  ads?: AdsParams;
   mobile?: MobileContext;
 }
 
@@ -85,6 +86,25 @@ export interface UTMParams {
   campaign?: string;
   term?: string;
   content?: string;
+}
+
+/**
+ * Ad platform click identifiers, captured from the landing URL and carried for
+ * the session. Server-side conversion upload APIs key on these — UTM values are
+ * not accepted as a substitute, and a click ID missed at click time cannot be
+ * backfilled later.
+ */
+export interface AdsParams {
+  /** Google Ads click ID. */
+  gclid?: string;
+  /** Google Ads iOS app-to-web click ID (ITP variant of gclid). */
+  gbraid?: string;
+  /** Google Ads web-to-app click ID (ITP variant of gclid). */
+  wbraid?: string;
+  /** Meta (Facebook/Instagram) click ID. */
+  fbclid?: string;
+  /** Meta browser cookie (_fbp); present only when a Meta pixel runs on the page. */
+  fbp?: string;
 }
 
 export type ClientEvent = LitemetricsEvent & ClientContext;

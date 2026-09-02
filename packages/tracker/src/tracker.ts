@@ -6,12 +6,13 @@ import type {
   IdentifyEvent,
   ClientContext,
   EventSubtype,
+  AdsParams,
 } from '@litemetrics/core';
 import { STORAGE_KEY_OPTOUT } from '@litemetrics/core';
 import { SessionManager } from './session';
 import { Transport } from './transport';
 import { AutoTracker, initLinkClickTracking, initButtonClickTracking, initScrollDepthTracking, initRageClickTracking } from './auto';
-import { parseUTM, now } from './utils';
+import { parseUTM, parseClickIds, getFbpCookie, now } from './utils';
 import { initAttributeTracking } from './attributes';
 
 function filterSelfReferrer(ref: string | undefined): string | undefined {
@@ -82,6 +83,13 @@ export function createTracker(config: TrackerConfig): LitemetricsInstance {
   } = config;
 
   const session = new SessionManager();
+  // Capture ad click IDs (gclid/gbraid/wbraid/fbclid) at landing and persist
+  // them for the session. Unlike UTM, these cannot be re-parsed per event: on an
+  // SPA the params are gone after the first navigation, and a click ID missed at
+  // click time is permanently lost — conversion-shaped clicks usually happen on
+  // a later page.
+  const landingClickIds = parseClickIds();
+  if (landingClickIds) session.saveClickIds(landingClickIds);
   // Warm the visitor id now rather than on the first track(). Resolving it goes
   // through crypto.subtle.digest on the threadpool, and until it lands a send
   // sits pending - which is time an event can be lost to destroy(). Doing it at
@@ -121,6 +129,12 @@ export function createTracker(config: TrackerConfig): LitemetricsInstance {
     }
     const utm = parseUTM();
     if (utm) ctx.utm = utm;
+    // Click IDs come from session storage (captured at landing), _fbp fresh from
+    // the cookie — the Meta pixel may not have set it yet at landing time.
+    const ads: AdsParams = { ...session.getClickIds() };
+    const fbp = getFbpCookie();
+    if (fbp) ads.fbp = fbp;
+    if (Object.keys(ads).length > 0) ctx.ads = ads;
     return ctx;
   }
 

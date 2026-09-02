@@ -7,4 +7,5 @@ export const STORAGE_KEY_QUEUE = '__litemetrics_q';
 export const STORAGE_KEY_OPTOUT = '__litemetrics_optout';
 export const STORAGE_KEY_USER = '__litemetrics_uid';
 export const STORAGE_KEY_LAST_ACTIVE = '__litemetrics_la';
+export const STORAGE_KEY_ADS = '__litemetrics_ads';
 export const COLLECT_PATH = '/api/collect';

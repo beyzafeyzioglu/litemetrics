@@ -1,4 +1,4 @@
-import type { UTMParams } from '@litemetrics/core';
+import type { AdsParams, UTMParams } from '@litemetrics/core';
 
 export function generateId(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -49,6 +49,39 @@ export function parseUTM(): UTMParams | undefined {
   }
 
   return hasUtm ? utm : undefined;
+}
+
+export type ClickIds = Pick<AdsParams, 'gclid' | 'gbraid' | 'wbraid' | 'fbclid'>;
+
+const CLICK_ID_PARAMS = ['gclid', 'gbraid', 'wbraid', 'fbclid'] as const;
+
+/** Parse ad platform click IDs from the current URL. */
+export function parseClickIds(): ClickIds | undefined {
+  if (typeof location === 'undefined') return undefined;
+  const params = new URLSearchParams(location.search);
+  const ids: ClickIds = {};
+  let hasAny = false;
+
+  for (const key of CLICK_ID_PARAMS) {
+    const val = params.get(key);
+    if (val) {
+      ids[key] = val;
+      hasAny = true;
+    }
+  }
+
+  return hasAny ? ids : undefined;
+}
+
+/** Read Meta's _fbp cookie; exists only when a Meta pixel runs on the page. */
+export function getFbpCookie(): string | undefined {
+  if (typeof document === 'undefined') return undefined;
+  try {
+    const match = document.cookie.match(/(?:^|;\s*)_fbp=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function getDayString(): string {
