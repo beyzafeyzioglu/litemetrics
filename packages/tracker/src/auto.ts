@@ -100,6 +100,8 @@ export function initLinkClickTracking(
           eventSubtype: 'file_download',
           pagePath: location.pathname || '/',
           targetUrlPath: toPath(url),
+          elementSelector: getElementSelector(link),
+          elementText: getElementText(link),
         });
         return;
       }
@@ -112,6 +114,8 @@ export function initLinkClickTracking(
         eventSubtype: isOutbound ? 'outbound_click' : 'link_click',
         pagePath: location.pathname || '/',
         targetUrlPath: toPath(url),
+        elementSelector: getElementSelector(link),
+        elementText: getElementText(link),
       });
     } catch {
       // ignore malformed URLs
