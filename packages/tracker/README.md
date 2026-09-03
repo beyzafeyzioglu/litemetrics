@@ -75,8 +75,25 @@ createTracker({
   flushInterval: 5000,            // Flush interval in ms (default: 5000)
   respectDnt: true,               // Respect Do Not Track (default: true)
   debug: false,                   // Console logging (default: false)
+  remoteTagConfig: true,             // Per-site remote tag config (default: true; see below)
 });
 ```
+
+## Remote Tag Config
+
+The collector host can serve a per-site config document at `/api/tag-config`
+(same origin as `endpoint`; override with `remoteTagConfig: { url }`). The tracker
+never interprets it — read it with:
+
+```ts
+const remote = await tracker.getRemoteTagConfig(); // RemoteTagConfig | null
+```
+
+The fetch is lazy (nothing leaves the page until the first `getRemoteTagConfig()`
+call) and sits behind the same DNT / webdriver / opt-out gates as tracking.
+The response is cached in localStorage and served for `maxStaleHours` from the
+document (default 72h); a host without the endpoint is negative-cached for 6h.
+Disable entirely with `remoteTagConfig: false`.
 
 ## Data Attribute Tracking
 

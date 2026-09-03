@@ -14,6 +14,9 @@ const NOOP_TRACKER: LitemetricsInstance = {
   track() {},
   identify() {},
   page() {},
+  getRemoteTagConfig() {
+    return Promise.resolve(null);
+  },
   reset() {},
   opt_out() {},
   opt_in() {},
@@ -90,6 +93,7 @@ export function LitemetricsProvider({
         identify: (...args: Parameters<LitemetricsInstance['identify']>) =>
           resolveTracker().identify(...args),
         page: (...args: Parameters<LitemetricsInstance['page']>) => resolveTracker().page(...args),
+        getRemoteTagConfig: () => resolveTracker().getRemoteTagConfig(),
         reset: () => resolveTracker().reset(),
         opt_out: () => resolveTracker().opt_out(),
         opt_in: () => resolveTracker().opt_in(),

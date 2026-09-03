@@ -193,6 +193,25 @@ export interface TrackerConfig {
   flushInterval?: number;
   respectDnt?: boolean;
   debug?: boolean;
+  /**
+   * Fetch a per-site remote tag config document from the collector host
+   * (TAG_CONFIG_PATH next to the collect endpoint by default). `false`
+   * disables it; an object overrides the URL. Defaults to enabled — a host
+   * that doesn't serve the endpoint costs one negative-cached request per
+   * visitor per TAG_CONFIG_NEGATIVE_TTL.
+   */
+  remoteTagConfig?: boolean | { url?: string };
+}
+
+// ─── Remote tag config (served per site, opaque to the tracker) ─
+
+export interface RemoteTagConfig {
+  /** Opaque document owned by whoever serves the endpoint. */
+  config: Record<string, unknown>;
+  /** Hours the client may serve this from cache before refreshing. */
+  maxStaleHours?: number;
+  siteId?: string;
+  updatedAt?: string;
 }
 
 // ─── Collector Config (server-side) ─────────────────────────

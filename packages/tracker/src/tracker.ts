@@ -7,6 +7,7 @@ import type {
   ClientContext,
   EventSubtype,
   AdsParams,
+  RemoteTagConfig,
 } from '@litemetrics/core';
 import { STORAGE_KEY_OPTOUT } from '@litemetrics/core';
 import { SessionManager } from './session';
@@ -14,6 +15,7 @@ import { Transport } from './transport';
 import { AutoTracker, initLinkClickTracking, initButtonClickTracking, initScrollDepthTracking, initRageClickTracking } from './auto';
 import { parseUTM, parseClickIds, getFbpCookie, now } from './utils';
 import { initAttributeTracking } from './attributes';
+import { createRemoteTagConfigClient } from './remote-tag-config';
 
 function filterSelfReferrer(ref: string | undefined): string | undefined {
   if (!ref) return undefined;
@@ -38,6 +40,8 @@ export interface LitemetricsInstance {
   }): void;
   identify(userId: string, traits?: Record<string, unknown>): void;
   page(url?: string, title?: string): void;
+  /** Per-site remote tag config served by the collector host; null when disabled, absent, or the tracker is a no-op. */
+  getRemoteTagConfig(): Promise<RemoteTagConfig | null>;
   reset(): void;
   opt_out(): void;
   opt_in(): void;
@@ -101,6 +105,10 @@ export function createTracker(config: TrackerConfig): LitemetricsInstance {
     flushInterval: config.flushInterval,
     debug,
   });
+  // Remote tag config sits behind the same DNT/webdriver/opt-out gates as
+  // everything else — a no-op tracker fetches nothing. The fetch is lazy:
+  // nothing leaves the page until a consumer calls getRemoteTagConfig().
+  const remoteTagConfig = createRemoteTagConfigClient(endpoint, config.remoteTagConfig);
   let autoTracker: AutoTracker | null = null;
   let cleanupAttributes: (() => void) | null = null;
   const autoCleanups: (() => void)[] = [];
@@ -234,6 +242,10 @@ export function createTracker(config: TrackerConfig): LitemetricsInstance {
       trackPage(url, title);
     },
 
+    getRemoteTagConfig(): Promise<RemoteTagConfig | null> {
+      return remoteTagConfig ? remoteTagConfig.get() : Promise.resolve(null);
+    },
+
     reset(): void {
       session.reset();
     },
@@ -260,6 +272,7 @@ export function createTracker(config: TrackerConfig): LitemetricsInstance {
       cleanupAttributes?.();
       autoCleanups.forEach((fn) => fn());
       autoTracker?.stop();
+      remoteTagConfig?.destroy();
       transport.destroy();
     },
   };
@@ -289,6 +302,9 @@ function createNoopTracker(): LitemetricsInstance {
     track() {},
     identify() {},
     page() {},
+    getRemoteTagConfig() {
+      return Promise.resolve(null);
+    },
     reset() {},
     opt_out() {},
     opt_in() {},
