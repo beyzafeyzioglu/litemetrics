@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### `@litemetrics/tracker`
+
+- **Auto-captured link clicks now carry element identity.** `Link Click`, `Outbound Link` and `File Download` events include `elementSelector` and `elementText` (same helpers, on the anchor element, that button clicks already used). Purely additive: existing fields, event names and subtypes are unchanged; an anchor with no visible text (icon links) keeps `elementText` absent. A button wrapped in an anchor is attributed to the link branch with the anchor's identity.
+
 ## 0.8.0 - App traffic unfiltered, collect observability, tracker hard stop
 
 **App traffic is no longer filtered as browser traffic.** Android events from React Native apps were never stored: RN's `fetch` sends OkHttp's default `okhttp/<version>` User-Agent on Android, `isbot` matches any bare `name/version` token, and the signature layer dropped every batch in `standard` mode. Measured across four app sites: 6053 events in 90 days, zero Android.

@@ -34,18 +34,18 @@ async function waitForEvent(fetchSpy: ReturnType<typeof spyFetch>, name: string)
 }
 
 /**
- * Build an element from HTML, attach it to the body, and set `innerText` when
- * jsdom does not implement it (getElementText reads innerText, which real
- * browsers provide; the fallback keeps the test about OUR field-attachment
- * logic rather than jsdom's text-rendering support).
+ * Build an element from HTML and attach it to the body. jsdom implements no
+ * `innerText`, so approximate it from `textContent` — a getter, not a canned
+ * string, so the elementText assertions still run through getElementText's
+ * real trim / whitespace-collapse / 80-char-cap transformation.
  */
-function mount(html: string, innerTextFallback?: string): HTMLElement {
+function mount(html: string): HTMLElement {
   const container = document.createElement('div');
   container.innerHTML = html;
   const el = container.firstElementChild as HTMLElement;
   document.body.appendChild(el);
-  if (innerTextFallback !== undefined && el.innerText === undefined) {
-    Object.defineProperty(el, 'innerText', { value: innerTextFallback, configurable: true });
+  if (el.innerText === undefined) {
+    Object.defineProperty(el, 'innerText', { get: () => el.textContent ?? '', configurable: true });
   }
   return el;
 }
@@ -87,7 +87,7 @@ describe('link click element identity', () => {
     const fetchSpy = spyFetch();
     makeAutoTracker();
 
-    const link = mount('<a class="cta primary" href="tel:+901234567890">Hemen Ara</a>', 'Hemen Ara');
+    const link = mount('<a class="cta primary" href="tel:+901234567890">Hemen Ara</a>');
     click(link);
 
     const event = await waitForEvent(fetchSpy, 'Link Click');
@@ -103,7 +103,7 @@ describe('link click element identity', () => {
     const fetchSpy = spyFetch();
     makeAutoTracker();
 
-    const link = mount('<a id="partner-link" href="https://external.example/offer">Partner Offer</a>', 'Partner Offer');
+    const link = mount('<a id="partner-link" href="https://external.example/offer">Partner Offer</a>');
     click(link);
 
     const event = await waitForEvent(fetchSpy, 'Outbound Link');
@@ -116,7 +116,7 @@ describe('link click element identity', () => {
     const fetchSpy = spyFetch();
     makeAutoTracker();
 
-    const link = mount('<a href="/files/whitepaper.pdf">Download Whitepaper</a>', 'Download Whitepaper');
+    const link = mount('<a href="/files/whitepaper.pdf">Download Whitepaper</a>');
     click(link);
 
     const event = await waitForEvent(fetchSpy, 'File Download');
@@ -130,7 +130,7 @@ describe('link click element identity', () => {
     const fetchSpy = spyFetch();
     makeAutoTracker();
 
-    const link = mount('<a class="icon-wa" href="https://wa.me/901234567890"><svg></svg></a>', '');
+    const link = mount('<a class="icon-wa" href="https://wa.me/901234567890"><svg></svg></a>');
     click(link);
 
     const event = await waitForEvent(fetchSpy, 'Outbound Link');
@@ -138,11 +138,23 @@ describe('link click element identity', () => {
     expect(event.elementSelector).toBe('a.icon-wa');
   });
 
+  it('collapses whitespace and caps elementText at 80 characters', async () => {
+    const fetchSpy = spyFetch();
+    makeAutoTracker();
+
+    const long = 'A'.repeat(100);
+    const link = mount(`<a href="https://external.example/x">  multi\n   word   ${long}  </a>`);
+    click(link);
+
+    const event = await waitForEvent(fetchSpy, 'Outbound Link');
+    expect(event.elementText).toBe(`multi word ${long}`.slice(0, 80));
+  });
+
   it('a button wrapped in an anchor is attributed to the link branch with the anchor identity', async () => {
     const fetchSpy = spyFetch();
     makeAutoTracker();
 
-    const link = mount('<a id="book-link" href="https://booking.example/r"><button>Book</button></a>', 'Book');
+    const link = mount('<a id="book-link" href="https://booking.example/r"><button>Book</button></a>');
     const button = link.querySelector('button')!;
     click(button);
 
