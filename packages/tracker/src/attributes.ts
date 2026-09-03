@@ -1,7 +1,26 @@
 import type { LitemetricsInstance } from './tracker';
 
-export const ATTR_EVENT = 'data-litemetrics-event';
+const ATTR_EVENT = 'data-litemetrics-event';
 const ATTR_PREFIX = 'data-litemetrics-event-';
+
+/**
+ * Walk up from `target` to the nearest element whose `data-litemetrics-event`
+ * carries a NON-EMPTY name. This is the single definition of "who owns this
+ * click": the attribute handler emits from it, and the auto link/button
+ * handlers stay silent exactly when it matches — one physical click, one
+ * recorded event (#18). Because both sides share this resolver (same walk AND
+ * same truthiness test), they cannot drift apart: an empty label
+ * (`data-litemetrics-event=""`) is unlabelled for both, so auto capture keeps
+ * firing for it, and the walk continues past it to a labelled ancestor.
+ */
+export function findDeclaredEvent(target: HTMLElement | null): HTMLElement | null {
+  let el: HTMLElement | null = target;
+  while (el) {
+    if (el.getAttribute?.(ATTR_EVENT)) return el;
+    el = el.parentElement;
+  }
+  return null;
+}
 
 /**
  * Initialize data-attribute event tracking.
@@ -14,34 +33,27 @@ const ATTR_PREFIX = 'data-litemetrics-event-';
  */
 export function initAttributeTracking(instance: LitemetricsInstance): () => void {
   function handleClick(e: Event) {
-    const target = e.target as HTMLElement | null;
-    if (!target) return;
+    const el = findDeclaredEvent(e.target as HTMLElement | null);
+    if (!el) return;
 
-    // Walk up the DOM to find an element with data-litemetrics-event
-    let el: HTMLElement | null = target;
-    while (el) {
-      const eventName = el.getAttribute(ATTR_EVENT);
-      if (eventName) {
-        // Collect data-litemetrics-event-* properties
-        const properties: Record<string, string> = {};
-        const attrs = el.attributes;
-        for (let i = 0; i < attrs.length; i++) {
-          const attr = attrs[i];
-          if (attr.name.startsWith(ATTR_PREFIX)) {
-            const key = attr.name.slice(ATTR_PREFIX.length);
-            properties[key] = attr.value;
-          }
-        }
+    const eventName = el.getAttribute(ATTR_EVENT)!;
 
-        instance.track(
-          eventName,
-          Object.keys(properties).length > 0 ? properties : undefined,
-          { eventSource: 'manual', eventSubtype: 'attribute' }
-        );
-        return;
+    // Collect data-litemetrics-event-* properties
+    const properties: Record<string, string> = {};
+    const attrs = el.attributes;
+    for (let i = 0; i < attrs.length; i++) {
+      const attr = attrs[i];
+      if (attr.name.startsWith(ATTR_PREFIX)) {
+        const key = attr.name.slice(ATTR_PREFIX.length);
+        properties[key] = attr.value;
       }
-      el = el.parentElement;
     }
+
+    instance.track(
+      eventName,
+      Object.keys(properties).length > 0 ? properties : undefined,
+      { eventSource: 'manual', eventSubtype: 'attribute' }
+    );
   }
 
   document.addEventListener('click', handleClick, true);

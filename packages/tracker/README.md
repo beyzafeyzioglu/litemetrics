@@ -46,7 +46,9 @@ When `autoTrack` is enabled (default), the tracker automatically captures:
 
 - **Pageviews** - Initial page load
 - **SPA Navigation** - Route changes via History API
-- **Data Attributes** - Clicks on `data-litemetrics-event="EventName"` elements
+- **Data Attributes** - Clicks on `data-litemetrics-event="EventName"` elements.
+  A click on such an element, or anywhere inside one, is recorded **only** as the
+  declared event: the auto link/button click events below are suppressed for it.
 - **Link Clicks** - Internal link clicks (path + link target path)
 - **Outbound Links** - Clicks on external links
 - **File Downloads** - Clicks on links to `.pdf`, `.zip`, `.doc`, `.csv`, etc.

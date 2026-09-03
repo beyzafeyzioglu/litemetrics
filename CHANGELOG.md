@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### `@litemetrics/tracker`
+
+- **One click on a labelled element now produces one event.** A click on (or inside) an element carrying a non-empty `data-litemetrics-event` is recorded only as the declared event; the auto `Link Click` / `Outbound Link` / `File Download` / `Button Click` rows are suppressed for it. Previously both fired, double-counting exactly the elements site authors had labelled — and the pair shared no key, so the duplication was unrepairable server-side. **Upgrading integrators will see auto click rows disappear for labelled elements** (they were duplicates); an *empty* label (`data-litemetrics-event=""`) counts as unlabelled and keeps today's auto capture. Rage-click and scroll events are unaffected.
+
 ## 0.8.0 - App traffic unfiltered, collect observability, tracker hard stop
 
 **App traffic is no longer filtered as browser traffic.** Android events from React Native apps were never stored: RN's `fetch` sends OkHttp's default `okhttp/<version>` User-Agent on Android, `isbot` matches any bare `name/version` token, and the signature layer dropped every batch in `standard` mode. Measured across four app sites: 6053 events in 90 days, zero Android.
