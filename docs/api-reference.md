@@ -41,9 +41,11 @@ Receives batched events from the tracker.
 
 | Type | Required Fields | Optional Fields |
 |------|----------------|-----------------|
-| `pageview` | `siteId`, `timestamp`, `sessionId`, `visitorId`, `url` | `referrer`, `title`, `screen`, `language`, `timezone`, `utm`, `connection` |
-| `event` | `siteId`, `timestamp`, `sessionId`, `visitorId`, `name` | `properties`, `screen`, `language`, `timezone`, `utm`, `connection` |
-| `identify` | `siteId`, `timestamp`, `sessionId`, `visitorId`, `userId` | `traits`, `screen`, `language`, `timezone`, `utm`, `connection` |
+| `pageview` | `siteId`, `timestamp`, `sessionId`, `visitorId`, `url` | `referrer`, `title` + shared context fields below |
+| `event` | `siteId`, `timestamp`, `sessionId`, `visitorId`, `name` | `properties`, `eventSource`, `eventSubtype`, `pagePath`, `targetUrlPath`, `elementSelector`, `elementText`, `scrollDepthPct` + shared context fields below |
+| `identify` | `siteId`, `timestamp`, `sessionId`, `visitorId`, `userId` | `traits` + shared context fields below |
+
+Shared context fields (any event type): `screen`, `language`, `timezone`, `connection`, `utm`, `ads` (ad click IDs: `gclid`, `gbraid`, `wbraid`, `fbclid`, `fbp`), `mobile` (app SDKs). The authoritative contract is `ClientContext` and the event types in `@litemetrics/core` (`packages/core/src/types.ts`).
 
 Max 100 events per request.
 

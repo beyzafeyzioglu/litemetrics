@@ -10,7 +10,7 @@
  *   bun scripts/migrate-clickhouse-to-postgres.ts
  *
  * Optional flags:
- *   --batch-size <N>      events per insert batch (default: 1000, max safe: 1400)
+ *   --batch-size <N>      events per insert batch (default: 1000, max safe: 1300)
  *   --since <ISO>         only events with timestamp >= ISO date
  *   --since-auto          resume from MAX(timestamp) in Postgres
  *   --overlap-minutes <N> safety buffer for --since-auto (default: 360 = 6h)
@@ -49,10 +49,10 @@ function parseArgs(): Args {
     return i >= 0 ? argv[i + 1] : undefined;
   };
   // Postgres caps bind parameters per statement at 65,535 (uint16). Events INSERT has
-  // 45 columns/row (event_id + EVENT_BASE_COLUMNS[43] + created_at) → max safe batch =
-  // floor(65535/45) = 1456. Use 1400 with margin.
+  // 50 columns/row (event_id + EVENT_BASE_COLUMNS[48] + created_at) → max safe batch =
+  // floor(65535/50) = 1310. Use 1300 with margin.
   const requested = Number(get('--batch-size') ?? 1000);
-  const MAX_SAFE = 1400;
+  const MAX_SAFE = 1300;
   const batchSize = Math.min(requested, MAX_SAFE);
   if (requested > MAX_SAFE) {
     console.warn(`Warning: --batch-size ${requested} exceeds Postgres bind-parameter safety limit; clamped to ${MAX_SAFE}`);
@@ -200,6 +200,16 @@ async function migrateEvents(ch: ReturnType<typeof createClient>, pg: Pool, args
 
   if (args.dryRun || total === 0) return;
 
+  // Columns added by a later release may not exist on the source table yet —
+  // ClickHouseAdapter.init() adds them, but this script opens a raw client and
+  // never calls it. Project NULL for whatever the source lacks instead of dying
+  // with UNKNOWN_IDENTIFIER after sites/identity have already been written.
+  const described = await ch.query({ query: 'DESCRIBE TABLE litemetrics_events', format: 'JSONEachRow' });
+  const sourceColumns = new Set((await described.json<{ name: string }>()).map((r) => r.name));
+  const col = (name: string): string => (sourceColumns.has(name) ? name : `NULL AS ${name}`);
+  const adClickIdColumns = ['gclid', 'gbraid', 'wbraid', 'fbclid', 'fbp'].map(col).join(', ');
+  const botFlagColumn = col('bot_flag');
+
   // Keyset pagination over (timestamp, event_id), stable across runs and avoids
   // OFFSET-skipping when many rows share the same millisecond timestamp.
   let lastTs: string | null = sinceLiteral; // ClickHouse string-literal datetime, or null for first page
@@ -226,10 +236,11 @@ async function migrateEvents(ch: ReturnType<typeof createClient>, pg: Pool, args
           device_type, browser, os, language, timezone,
           screen_width, screen_height,
           utm_source, utm_medium, utm_campaign, utm_term, utm_content,
+          ${adClickIdColumns},
           ip,
           os_version, device_model, device_brand,
           app_version, app_build, sdk_name, sdk_version,
-          bot_flag,
+          ${botFlagColumn},
           created_at
         FROM litemetrics_events
         ${cursorClause}
@@ -303,6 +314,11 @@ async function insertEventBatch(pg: Pool, rows: Record<string, unknown>[]): Prom
       r.utm_campaign ?? null,
       r.utm_term ?? null,
       r.utm_content ?? null,
+      r.gclid ?? null,
+      r.gbraid ?? null,
+      r.wbraid ?? null,
+      r.fbclid ?? null,
+      r.fbp ?? null,
       r.ip ?? null,
       r.os_version ?? null,
       r.device_model ?? null,

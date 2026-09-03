@@ -1,14 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
+// test-utils installs the jsdom sendBeacon stub at import time.
 import { destroyOpenTrackers, makeTracker } from './test-utils';
-
-// jsdom doesn't implement sendBeacon; define a stub so vi.spyOn can attach.
-if (typeof navigator !== 'undefined' && !('sendBeacon' in navigator)) {
-  Object.defineProperty(navigator, 'sendBeacon', {
-    value: () => true,
-    configurable: true,
-    writable: true,
-  });
-}
 
 afterEach(() => {
   // Destroy before restoring mocks. A send whose visitor id is still resolving

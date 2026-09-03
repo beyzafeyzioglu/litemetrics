@@ -105,7 +105,8 @@ filtering (`@litemetrics/node`) still handles bots that mask `webdriver`.
 ## Privacy
 
 - Respects `Do Not Track` browser setting
-- No cookies - uses `localStorage` for session/visitor IDs
+- No cookies set - uses `localStorage` for session/visitor IDs. The one cookie *read* (never set) is Meta's `_fbp`, and only for visitors who landed with an ad click ID (`gclid`/`gbraid`/`wbraid`/`fbclid`) — a visitor who never clicked an ad sends no cookie value
+- Ad click IDs are kept for 90 days (conversion windows) and dropped by `reset()`
 - `opt_out()` / `opt_in()` methods for user consent
 - All data sent to your own server (self-hosted)
 
