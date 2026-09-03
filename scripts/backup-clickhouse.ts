@@ -14,6 +14,7 @@
 import { createClient } from '@clickhouse/client';
 import { mkdirSync, createWriteStream, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { EVENT_BASE_COLUMNS } from '../packages/node/src/adapters/postgres';
 
 const BATCH = 5000;
 
@@ -85,23 +86,22 @@ async function dumpEvents(ch: ReturnType<typeof createClient>, outPath: string):
   let written = 0;
   const startTime = Date.now();
 
+  // Build the column list from the runtime adapter's single source of truth so a
+  // backup can never silently omit a column the collector writes (this SELECT
+  // used to be hand-maintained and had already dropped bot_flag). Columns the
+  // source table does not have yet — added by a later release's init() — are
+  // projected as NULL so the backup still runs.
+  const described = await ch.query({ query: 'DESCRIBE TABLE litemetrics_events', format: 'JSONEachRow' });
+  const sourceColumns = new Set((await described.json<{ name: string }>()).map((r) => r.name));
+  const eventColumns = [
+    'toString(event_id) AS event_id',
+    ...EVENT_BASE_COLUMNS.map((c) => (sourceColumns.has(c) ? c : `NULL AS ${c}`)),
+    'created_at',
+  ].join(', ');
+
   while (offset < total) {
     const batch = await ch.query({
-      query: `SELECT
-                toString(event_id) AS event_id,
-                site_id, type, timestamp, session_id, visitor_id,
-                url, referrer, title, event_name, properties,
-                event_source, event_subtype, page_path, target_url_path,
-                element_selector, element_text, scroll_depth_pct,
-                user_id, traits,
-                country, city, region,
-                device_type, browser, os, language, timezone,
-                screen_width, screen_height,
-                utm_source, utm_medium, utm_campaign, utm_term, utm_content,
-                ip,
-                os_version, device_model, device_brand,
-                app_version, app_build, sdk_name, sdk_version,
-                created_at
+      query: `SELECT ${eventColumns}
               FROM litemetrics_events
               ORDER BY timestamp ASC
               LIMIT ${BATCH} OFFSET ${offset}`,

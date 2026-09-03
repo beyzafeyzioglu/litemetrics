@@ -200,6 +200,16 @@ async function migrateEvents(ch: ReturnType<typeof createClient>, pg: Pool, args
 
   if (args.dryRun || total === 0) return;
 
+  // Columns added by a later release may not exist on the source table yet —
+  // ClickHouseAdapter.init() adds them, but this script opens a raw client and
+  // never calls it. Project NULL for whatever the source lacks instead of dying
+  // with UNKNOWN_IDENTIFIER after sites/identity have already been written.
+  const described = await ch.query({ query: 'DESCRIBE TABLE litemetrics_events', format: 'JSONEachRow' });
+  const sourceColumns = new Set((await described.json<{ name: string }>()).map((r) => r.name));
+  const col = (name: string): string => (sourceColumns.has(name) ? name : `NULL AS ${name}`);
+  const adClickIdColumns = ['gclid', 'gbraid', 'wbraid', 'fbclid', 'fbp'].map(col).join(', ');
+  const botFlagColumn = col('bot_flag');
+
   // Keyset pagination over (timestamp, event_id), stable across runs and avoids
   // OFFSET-skipping when many rows share the same millisecond timestamp.
   let lastTs: string | null = sinceLiteral; // ClickHouse string-literal datetime, or null for first page
@@ -226,11 +236,11 @@ async function migrateEvents(ch: ReturnType<typeof createClient>, pg: Pool, args
           device_type, browser, os, language, timezone,
           screen_width, screen_height,
           utm_source, utm_medium, utm_campaign, utm_term, utm_content,
-          gclid, gbraid, wbraid, fbclid, fbp,
+          ${adClickIdColumns},
           ip,
           os_version, device_model, device_brand,
           app_version, app_build, sdk_name, sdk_version,
-          bot_flag,
+          ${botFlagColumn},
           created_at
         FROM litemetrics_events
         ${cursorClause}

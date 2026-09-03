@@ -5,6 +5,7 @@ import {
   STORAGE_KEY_LAST_ACTIVE,
   STORAGE_KEY_USER,
   STORAGE_KEY_ADS,
+  CLICK_ID_TTL,
 } from '@litemetrics/core';
 import { generateId, hashString, getDayString, now, type ClickIds } from './utils';
 
@@ -83,23 +84,26 @@ export class SessionManager {
   }
 
   /**
-   * Persist ad click IDs captured from the landing URL, bound to the current
-   * session. A later landing with fresh IDs overwrites; the stored values die
-   * with the session (unlike the visitor ID, which rotates daily for privacy —
-   * these are session-scoped join keys, not identity).
+   * Persist ad click IDs captured from the landing URL, merged into whatever is
+   * already stored — a later landing carrying only one platform's ID (ordinary
+   * retargeting) must not erase the other's. The blob is stamped with the
+   * capture time and honoured for CLICK_ID_TTL, because the conversion windows
+   * these serve are 7-90 days, not a session; reset() removes it. They stay
+   * join keys, not identity — the visitor ID keeps rotating daily.
    */
   saveClickIds(ids: ClickIds): void {
-    storageSet(STORAGE_KEY_ADS, JSON.stringify({ sid: this._sessionId, ids }));
+    const merged: ClickIds = { ...this.getClickIds(), ...ids };
+    storageSet(STORAGE_KEY_ADS, JSON.stringify({ ts: now(), ids: merged }));
   }
 
-  /** Click IDs captured earlier in THIS session; undefined for other sessions. */
+  /** Click IDs captured within the last CLICK_ID_TTL; undefined once expired. */
   getClickIds(): ClickIds | undefined {
     const raw = storageGet(STORAGE_KEY_ADS);
     if (!raw) return undefined;
     try {
-      const parsed = JSON.parse(raw) as { sid?: string; ids?: ClickIds };
-      if (parsed.sid !== this._sessionId || !parsed.ids) return undefined;
-      return parsed.ids;
+      const parsed = JSON.parse(raw) as { ts?: number; ids?: ClickIds };
+      if (typeof parsed.ts !== 'number' || now() - parsed.ts >= CLICK_ID_TTL) return undefined;
+      return parsed.ids && Object.keys(parsed.ids).length > 0 ? parsed.ids : undefined;
     } catch {
       return undefined;
     }

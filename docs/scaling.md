@@ -97,7 +97,7 @@ If you're seeing slowness:
 
 If using Postgres instead of ClickHouse:
 - Full feature parity with ClickHouse, every metric and time series produces identical results
-- Event ingestion uses chunked multi-row INSERT (capped at 1400 rows/batch to stay under PG's 65K bind-parameter limit)
+- Event ingestion uses chunked multi-row INSERT, sized automatically to stay under PG's 65,535 bind-parameter limit (the exact rows-per-batch is derived from the column count and maintained next to the INSERT itself)
 - Properties and traits are stored as native `jsonb`
 - Composite index on `(site_id, timestamp DESC)` powers fast range scans
 - Sites use a `deleted_at` soft-delete column to mirror ClickHouse semantics

@@ -84,10 +84,10 @@ export function createTracker(config: TrackerConfig): LitemetricsInstance {
 
   const session = new SessionManager();
   // Capture ad click IDs (gclid/gbraid/wbraid/fbclid) at landing and persist
-  // them for the session. Unlike UTM, these cannot be re-parsed per event: on an
-  // SPA the params are gone after the first navigation, and a click ID missed at
-  // click time is permanently lost — conversion-shaped clicks usually happen on
-  // a later page.
+  // them for CLICK_ID_TTL. Unlike UTM, these cannot be re-parsed per event: on
+  // an SPA the params are gone after the first navigation, and a click ID missed
+  // at click time is permanently lost — conversions usually happen on a later
+  // page, often days after the click.
   const landingClickIds = parseClickIds();
   if (landingClickIds) session.saveClickIds(landingClickIds);
   // Warm the visitor id now rather than on the first track(). Resolving it goes
@@ -129,12 +129,18 @@ export function createTracker(config: TrackerConfig): LitemetricsInstance {
     }
     const utm = parseUTM();
     if (utm) ctx.utm = utm;
-    // Click IDs come from session storage (captured at landing), _fbp fresh from
-    // the cookie — the Meta pixel may not have set it yet at landing time.
-    const ads: AdsParams = { ...session.getClickIds() };
-    const fbp = getFbpCookie();
-    if (fbp) ads.fbp = fbp;
-    if (Object.keys(ads).length > 0) ctx.ads = ads;
+    // Click IDs come from storage (captured at landing, kept for CLICK_ID_TTL).
+    // _fbp is read fresh from Meta's cookie (the pixel may set it after landing)
+    // and forwarded ONLY alongside a captured click ID — a visitor who never
+    // clicked an ad sends no cookie value, keeping the "no cookies" posture and
+    // the daily visitor-ID rotation intact for everyone else.
+    const clickIds = session.getClickIds();
+    if (clickIds) {
+      const ads: AdsParams = { ...clickIds };
+      const fbp = getFbpCookie();
+      if (fbp) ads.fbp = fbp;
+      ctx.ads = ads;
+    }
     return ctx;
   }
 

@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+**Ad click IDs are captured at landing and stored as first-class columns.** A click ID (`gclid`, `gbraid`, `wbraid`, `fbclid`) not recorded at click time cannot be backfilled later; server-side conversion upload APIs key on them and do not accept UTM values as a substitute.
+
+### `@litemetrics/core`
+
+- New `AdsParams` type on `ClientContext.ads`; new `STORAGE_KEY_ADS` and `CLICK_ID_TTL` constants.
+
+### `@litemetrics/tracker`
+
+- Ad click IDs are parsed from the landing URL, merged across landings (a retargeting click carrying one platform's ID does not erase the other's), and kept for **90 days** (`CLICK_ID_TTL`) so conversion events on later pages — and later sessions — still carry them. `reset()` drops them.
+- Meta's `_fbp` cookie is **read (never set) and forwarded only when a click ID was captured** — a visitor who never clicked an ad sends no cookie value, and the daily visitor-ID rotation stays unbridged for everyone else.
+
+### `@litemetrics/node`
+
+- New nullable event columns `gclid`, `gbraid`, `wbraid`, `fbclid`, `fbp` in all three adapters.
+- **Operators:** existing ClickHouse/Postgres deployments migrate automatically at collector startup (idempotent `ADD COLUMN IF NOT EXISTS` in `init()`); no manual SQL.
+- `scripts/migrate-clickhouse-to-postgres.ts` and `scripts/backup-clickhouse.ts` now `DESCRIBE` the source table and project `NULL` for columns it does not have yet, instead of failing with `UNKNOWN_IDENTIFIER` against a pre-upgrade ClickHouse source. The backup's column list is now built from `EVENT_BASE_COLUMNS` (it had drifted and was silently omitting `bot_flag`).
+- **Data note:** Postgres INSERT batches are now 1300 rows (48 columns/row under the 65,535 bind-parameter cap).
+
 ## 0.8.0 - App traffic unfiltered, collect observability, tracker hard stop
 
 **App traffic is no longer filtered as browser traffic.** Android events from React Native apps were never stored: RN's `fetch` sends OkHttp's default `okhttp/<version>` User-Agent on Android, `isbot` matches any bare `name/version` token, and the signature layer dropped every batch in `standard` mode. Measured across four app sites: 6053 events in 90 days, zero Android.

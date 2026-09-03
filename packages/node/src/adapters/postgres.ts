@@ -32,7 +32,11 @@ export const EVENT_BASE_COLUMNS = [
 
 // ─── DDL ──────────────────────────────────────────────────────
 
-const CREATE_EVENTS_TABLE = `
+// Exported (alongside EVENT_BASE_COLUMNS and buildEventRow) so a DB-free test
+// can pin the positional coupling between the column list, the row builder and
+// this DDL — inserting a column into one and not the others shifts every event
+// one column over, silently.
+export const CREATE_EVENTS_TABLE = `
 CREATE TABLE IF NOT EXISTS ${EVENTS_TABLE} (
     event_id          uuid NOT NULL DEFAULT gen_random_uuid(),
     site_id           text NOT NULL,
@@ -149,6 +153,63 @@ CREATE TABLE IF NOT EXISTS ${IDENTITY_MAP_TABLE} (
 const CREATE_IDENTITY_MAP_INDEXES: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_${IDENTITY_MAP_TABLE}_site_user ON ${IDENTITY_MAP_TABLE} (site_id, user_id)`,
 ];
+
+/**
+ * The bound-parameter row for one event, in EVENT_BASE_COLUMNS order — the two
+ * are coupled by position. Exported so a DB-free test can pin that coupling.
+ */
+export function buildEventRow(e: EnrichedEvent): unknown[] {
+  return [
+    e.siteId,
+    e.type,
+    new Date(e.timestamp),
+    e.sessionId,
+    e.visitorId,
+    e.url ?? null,
+    e.referrer ?? null,
+    e.title ?? null,
+    e.name ?? null,
+    e.properties ? JSON.stringify(e.properties) : null,
+    e.eventSource ?? null,
+    e.eventSubtype ?? null,
+    e.pagePath ?? null,
+    e.targetUrlPath ?? null,
+    e.elementSelector ?? null,
+    e.elementText ?? null,
+    e.scrollDepthPct ?? null,
+    e.userId ?? null,
+    e.traits ? JSON.stringify(e.traits) : null,
+    e.geo?.country ?? null,
+    e.geo?.city ?? null,
+    e.geo?.region ?? null,
+    e.device?.type ?? null,
+    e.device?.browser ?? null,
+    e.device?.os ?? null,
+    e.language ?? null,
+    e.timezone ?? null,
+    e.screen?.width ?? null,
+    e.screen?.height ?? null,
+    e.utm?.source ?? null,
+    e.utm?.medium ?? null,
+    e.utm?.campaign ?? null,
+    e.utm?.term ?? null,
+    e.utm?.content ?? null,
+    e.ads?.gclid ?? null,
+    e.ads?.gbraid ?? null,
+    e.ads?.wbraid ?? null,
+    e.ads?.fbclid ?? null,
+    e.ads?.fbp ?? null,
+    e.ip ?? null,
+    e.device?.osVersion ?? null,
+    e.device?.deviceModel ?? null,
+    e.device?.deviceBrand ?? null,
+    e.device?.appVersion ?? null,
+    e.device?.appBuild ?? null,
+    e.device?.sdkName ?? null,
+    e.device?.sdkVersion ?? null,
+    e.botFlag ?? null,
+  ];
+}
 
 // ─── Helpers: SQL expressions ──────────────────────────────────
 
@@ -420,56 +481,7 @@ export class PostgresAdapter implements DBAdapter {
     let p = 0;
 
     for (const e of events) {
-      const row = [
-        e.siteId,
-        e.type,
-        new Date(e.timestamp),
-        e.sessionId,
-        e.visitorId,
-        e.url ?? null,
-        e.referrer ?? null,
-        e.title ?? null,
-        e.name ?? null,
-        e.properties ? JSON.stringify(e.properties) : null,
-        e.eventSource ?? null,
-        e.eventSubtype ?? null,
-        e.pagePath ?? null,
-        e.targetUrlPath ?? null,
-        e.elementSelector ?? null,
-        e.elementText ?? null,
-        e.scrollDepthPct ?? null,
-        e.userId ?? null,
-        e.traits ? JSON.stringify(e.traits) : null,
-        e.geo?.country ?? null,
-        e.geo?.city ?? null,
-        e.geo?.region ?? null,
-        e.device?.type ?? null,
-        e.device?.browser ?? null,
-        e.device?.os ?? null,
-        e.language ?? null,
-        e.timezone ?? null,
-        e.screen?.width ?? null,
-        e.screen?.height ?? null,
-        e.utm?.source ?? null,
-        e.utm?.medium ?? null,
-        e.utm?.campaign ?? null,
-        e.utm?.term ?? null,
-        e.utm?.content ?? null,
-        e.ads?.gclid ?? null,
-        e.ads?.gbraid ?? null,
-        e.ads?.wbraid ?? null,
-        e.ads?.fbclid ?? null,
-        e.ads?.fbp ?? null,
-        e.ip ?? null,
-        e.device?.osVersion ?? null,
-        e.device?.deviceModel ?? null,
-        e.device?.deviceBrand ?? null,
-        e.device?.appVersion ?? null,
-        e.device?.appBuild ?? null,
-        e.device?.sdkName ?? null,
-        e.device?.sdkVersion ?? null,
-        e.botFlag ?? null,
-      ];
+      const row = buildEventRow(e);
       const placeholders = row.map(() => `$${++p}`).join(', ');
       rowPlaceholders.push(`(${placeholders})`);
       values.push(...row);
