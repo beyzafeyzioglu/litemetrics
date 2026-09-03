@@ -64,6 +64,18 @@ function toPath(url: URL): string {
   return url.pathname || '/';
 }
 
+/**
+ * The stored identity of a click's destination. Internal links keep the bare
+ * pathname (unchanged shape). For an outbound link the hostname is often the
+ * only thing identifying the destination (wa.me, social profiles, booking
+ * platforms) and the payload may live in the query
+ * (api.whatsapp.com/send?phone=…), so host + path + query are preserved — the
+ * destination must be recoverable from the stored row (#19).
+ */
+function toTargetPath(url: URL, isOutbound: boolean): string {
+  return isOutbound ? `${url.host}${toPath(url)}${url.search}` : toPath(url);
+}
+
 function getElementSelector(el: HTMLElement | null): string | undefined {
   if (!el) return undefined;
   if (el.id) return `#${el.id}`;
@@ -103,6 +115,8 @@ export function initLinkClickTracking(
           eventSubtype: 'file_download',
           pagePath: location.pathname || '/',
           targetUrlPath: toPath(url),
+          elementSelector: getElementSelector(link),
+          elementText: getElementText(link),
         });
         return;
       }
@@ -114,7 +128,9 @@ export function initLinkClickTracking(
         eventSource: 'auto',
         eventSubtype: isOutbound ? 'outbound_click' : 'link_click',
         pagePath: location.pathname || '/',
-        targetUrlPath: toPath(url),
+        targetUrlPath: toTargetPath(url, isOutbound),
+        elementSelector: getElementSelector(link),
+        elementText: getElementText(link),
       });
     } catch {
       // ignore malformed URLs
