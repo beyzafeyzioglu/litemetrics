@@ -57,6 +57,11 @@ CREATE TABLE IF NOT EXISTS ${EVENTS_TABLE} (
     utm_campaign   Nullable(String),
     utm_term       Nullable(String),
     utm_content    Nullable(String),
+    gclid          Nullable(String),
+    gbraid         Nullable(String),
+    wbraid         Nullable(String),
+    fbclid         Nullable(String),
+    fbp            Nullable(String),
     ip             Nullable(String),
     os_version     LowCardinality(Nullable(String)),
     device_model   LowCardinality(Nullable(String)),
@@ -301,6 +306,12 @@ export class ClickHouseAdapter implements DBAdapter {
     await this.client.command({ query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS bot_flag LowCardinality(Nullable(String))` });
     await this.client.command({ query: `ALTER TABLE ${SITES_TABLE} ADD COLUMN IF NOT EXISTS type LowCardinality(Nullable(String)) DEFAULT 'web'` });
     await this.client.command({ query: `ALTER TABLE ${SITES_TABLE} ADD COLUMN IF NOT EXISTS bot_filter_mode LowCardinality(Nullable(String))` });
+    // Ad click ID columns
+    await this.client.command({ query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS gclid Nullable(String)` });
+    await this.client.command({ query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS gbraid Nullable(String)` });
+    await this.client.command({ query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS wbraid Nullable(String)` });
+    await this.client.command({ query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS fbclid Nullable(String)` });
+    await this.client.command({ query: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS fbp Nullable(String)` });
   }
 
   async close(): Promise<void> {
@@ -347,6 +358,11 @@ export class ClickHouseAdapter implements DBAdapter {
       utm_campaign: e.utm?.campaign ?? null,
       utm_term: e.utm?.term ?? null,
       utm_content: e.utm?.content ?? null,
+      gclid: e.ads?.gclid ?? null,
+      gbraid: e.ads?.gbraid ?? null,
+      wbraid: e.ads?.wbraid ?? null,
+      fbclid: e.ads?.fbclid ?? null,
+      fbp: e.ads?.fbp ?? null,
       ip: e.ip ?? null,
       os_version: e.device?.osVersion ?? null,
       device_model: e.device?.deviceModel ?? null,

@@ -23,6 +23,7 @@ export const EVENT_BASE_COLUMNS = [
   'device_type', 'browser', 'os', 'language', 'timezone',
   'screen_width', 'screen_height',
   'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+  'gclid', 'gbraid', 'wbraid', 'fbclid', 'fbp',
   'ip',
   'os_version', 'device_model', 'device_brand',
   'app_version', 'app_build', 'sdk_name', 'sdk_version',
@@ -31,7 +32,11 @@ export const EVENT_BASE_COLUMNS = [
 
 // ─── DDL ──────────────────────────────────────────────────────
 
-const CREATE_EVENTS_TABLE = `
+// Exported (alongside EVENT_BASE_COLUMNS and buildEventRow) so a DB-free test
+// can pin the positional coupling between the column list, the row builder and
+// this DDL — inserting a column into one and not the others shifts every event
+// one column over, silently.
+export const CREATE_EVENTS_TABLE = `
 CREATE TABLE IF NOT EXISTS ${EVENTS_TABLE} (
     event_id          uuid NOT NULL DEFAULT gen_random_uuid(),
     site_id           text NOT NULL,
@@ -68,6 +73,11 @@ CREATE TABLE IF NOT EXISTS ${EVENTS_TABLE} (
     utm_campaign      text,
     utm_term          text,
     utm_content       text,
+    gclid             text,
+    gbraid            text,
+    wbraid            text,
+    fbclid            text,
+    fbp               text,
     ip                text,
     os_version        text,
     device_model      text,
@@ -94,6 +104,14 @@ const CREATE_EVENTS_INDEXES: string[] = [
 
 // Idempotent column add for upgrades from a previous schema without bot_flag.
 const ALTER_EVENTS_ADD_BOT_FLAG = `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN IF NOT EXISTS bot_flag text`;
+
+// Idempotent column adds for upgrades from a previous schema without ad click IDs.
+const ALTER_EVENTS_ADD_AD_CLICK_IDS = `ALTER TABLE ${EVENTS_TABLE}
+  ADD COLUMN IF NOT EXISTS gclid text,
+  ADD COLUMN IF NOT EXISTS gbraid text,
+  ADD COLUMN IF NOT EXISTS wbraid text,
+  ADD COLUMN IF NOT EXISTS fbclid text,
+  ADD COLUMN IF NOT EXISTS fbp text`;
 
 const CREATE_SITES_TABLE = `
 CREATE TABLE IF NOT EXISTS ${SITES_TABLE} (
@@ -135,6 +153,63 @@ CREATE TABLE IF NOT EXISTS ${IDENTITY_MAP_TABLE} (
 const CREATE_IDENTITY_MAP_INDEXES: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_${IDENTITY_MAP_TABLE}_site_user ON ${IDENTITY_MAP_TABLE} (site_id, user_id)`,
 ];
+
+/**
+ * The bound-parameter row for one event, in EVENT_BASE_COLUMNS order — the two
+ * are coupled by position. Exported so a DB-free test can pin that coupling.
+ */
+export function buildEventRow(e: EnrichedEvent): unknown[] {
+  return [
+    e.siteId,
+    e.type,
+    new Date(e.timestamp),
+    e.sessionId,
+    e.visitorId,
+    e.url ?? null,
+    e.referrer ?? null,
+    e.title ?? null,
+    e.name ?? null,
+    e.properties ? JSON.stringify(e.properties) : null,
+    e.eventSource ?? null,
+    e.eventSubtype ?? null,
+    e.pagePath ?? null,
+    e.targetUrlPath ?? null,
+    e.elementSelector ?? null,
+    e.elementText ?? null,
+    e.scrollDepthPct ?? null,
+    e.userId ?? null,
+    e.traits ? JSON.stringify(e.traits) : null,
+    e.geo?.country ?? null,
+    e.geo?.city ?? null,
+    e.geo?.region ?? null,
+    e.device?.type ?? null,
+    e.device?.browser ?? null,
+    e.device?.os ?? null,
+    e.language ?? null,
+    e.timezone ?? null,
+    e.screen?.width ?? null,
+    e.screen?.height ?? null,
+    e.utm?.source ?? null,
+    e.utm?.medium ?? null,
+    e.utm?.campaign ?? null,
+    e.utm?.term ?? null,
+    e.utm?.content ?? null,
+    e.ads?.gclid ?? null,
+    e.ads?.gbraid ?? null,
+    e.ads?.wbraid ?? null,
+    e.ads?.fbclid ?? null,
+    e.ads?.fbp ?? null,
+    e.ip ?? null,
+    e.device?.osVersion ?? null,
+    e.device?.deviceModel ?? null,
+    e.device?.deviceBrand ?? null,
+    e.device?.appVersion ?? null,
+    e.device?.appBuild ?? null,
+    e.device?.sdkName ?? null,
+    e.device?.sdkVersion ?? null,
+    e.botFlag ?? null,
+  ];
+}
 
 // ─── Helpers: SQL expressions ──────────────────────────────────
 
@@ -364,6 +439,7 @@ export class PostgresAdapter implements DBAdapter {
 
       await client.query(CREATE_EVENTS_TABLE);
       await client.query(ALTER_EVENTS_ADD_BOT_FLAG);
+      await client.query(ALTER_EVENTS_ADD_AD_CLICK_IDS);
       for (const sql of CREATE_EVENTS_INDEXES) await client.query(sql);
 
       await client.query(CREATE_SITES_TABLE);
@@ -388,10 +464,10 @@ export class PostgresAdapter implements DBAdapter {
     if (events.length === 0) return;
 
     // Postgres wire protocol caps bind parameters per statement at 65,535 (uint16).
-    // With 43 columns/row, max safe rows-per-INSERT = floor(65535/43) = 1524. Use 1400
+    // With 48 columns/row, max safe rows-per-INSERT = floor(65535/48) = 1365. Use 1300
     // for a margin to allow callers to send arbitrarily-large batches without
     // having to know about this limit.
-    const CHUNK_SIZE = 1400;
+    const CHUNK_SIZE = 1300;
     if (events.length > CHUNK_SIZE) {
       for (let i = 0; i < events.length; i += CHUNK_SIZE) {
         await this.insertEvents(events.slice(i, i + CHUNK_SIZE));
@@ -405,51 +481,7 @@ export class PostgresAdapter implements DBAdapter {
     let p = 0;
 
     for (const e of events) {
-      const row = [
-        e.siteId,
-        e.type,
-        new Date(e.timestamp),
-        e.sessionId,
-        e.visitorId,
-        e.url ?? null,
-        e.referrer ?? null,
-        e.title ?? null,
-        e.name ?? null,
-        e.properties ? JSON.stringify(e.properties) : null,
-        e.eventSource ?? null,
-        e.eventSubtype ?? null,
-        e.pagePath ?? null,
-        e.targetUrlPath ?? null,
-        e.elementSelector ?? null,
-        e.elementText ?? null,
-        e.scrollDepthPct ?? null,
-        e.userId ?? null,
-        e.traits ? JSON.stringify(e.traits) : null,
-        e.geo?.country ?? null,
-        e.geo?.city ?? null,
-        e.geo?.region ?? null,
-        e.device?.type ?? null,
-        e.device?.browser ?? null,
-        e.device?.os ?? null,
-        e.language ?? null,
-        e.timezone ?? null,
-        e.screen?.width ?? null,
-        e.screen?.height ?? null,
-        e.utm?.source ?? null,
-        e.utm?.medium ?? null,
-        e.utm?.campaign ?? null,
-        e.utm?.term ?? null,
-        e.utm?.content ?? null,
-        e.ip ?? null,
-        e.device?.osVersion ?? null,
-        e.device?.deviceModel ?? null,
-        e.device?.deviceBrand ?? null,
-        e.device?.appVersion ?? null,
-        e.device?.appBuild ?? null,
-        e.device?.sdkName ?? null,
-        e.device?.sdkVersion ?? null,
-        e.botFlag ?? null,
-      ];
+      const row = buildEventRow(e);
       const placeholders = row.map(() => `$${++p}`).join(', ');
       rowPlaceholders.push(`(${placeholders})`);
       values.push(...row);

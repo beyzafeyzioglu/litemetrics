@@ -176,6 +176,7 @@ function buildFixture(siteId: string): EnrichedEvent[] {
     url: 'https://parity.test/landing', referrer: 'https://www.google.com/search?q=foo', title: '/landing',
     geo: { country: 'US' }, device: { type: 'desktop', browser: 'Chrome', os: 'macOS' }, language: 'en-US',
     utm: { source: 'google', medium: 'cpc', campaign: 'spring-sale' },
+    ads: { gclid: 'gclid-parity-1', wbraid: 'wbraid-parity-1' },
   });
   events.push({
     type: 'pageview',
@@ -183,6 +184,7 @@ function buildFixture(siteId: string): EnrichedEvent[] {
     url: 'https://parity.test/landing', referrer: 'https://www.instagram.com/p/abc', title: '/landing',
     geo: { country: 'US' }, device: { type: 'mobile', browser: 'Safari', os: 'iOS' }, language: 'en-US',
     utm: { source: 'instagram' },
+    ads: { fbclid: 'fbclid-parity-1', fbp: 'fb.1.1700000000.1' },
   });
 
   return events;

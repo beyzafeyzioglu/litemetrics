@@ -1,4 +1,5 @@
 import type { LitemetricsInstance } from './tracker';
+import { findDeclaredEvent } from './attributes';
 
 export type PageCallback = (url: string, referrer?: string) => void;
 
@@ -97,6 +98,8 @@ export function initLinkClickTracking(
   function handleClick(e: MouseEvent) {
     const link = (e.target as HTMLElement)?.closest?.('a') as HTMLAnchorElement | null;
     if (!link) return;
+    // A click owned by a declared data-litemetrics-event emits only that event (#18).
+    if (findDeclaredEvent(e.target as HTMLElement | null)) return;
 
     const href = link.href;
     if (!href || href.startsWith('javascript:') || href.startsWith('#')) return;
@@ -147,6 +150,8 @@ export function initButtonClickTracking(instance: LitemetricsInstance): () => vo
     const button = target.closest('button, [role="button"], input[type="button"], input[type="submit"]') as HTMLElement | null;
     if (!button) return;
     if (button.closest('a')) return;
+    // A click owned by a declared data-litemetrics-event emits only that event (#18).
+    if (findDeclaredEvent(target)) return;
 
     instance.track('Button Click', undefined, {
       eventSource: 'auto',

@@ -11,17 +11,9 @@
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { Transport } from './transport';
+// test-utils installs the jsdom sendBeacon stub at import time.
 import { destroyOpenTrackers, makeTracker } from './test-utils';
 import { STORAGE_KEY_VISITOR, type ClientEvent } from '@litemetrics/core';
-
-// jsdom does not implement sendBeacon; define a stub so vi.spyOn can attach.
-if (typeof navigator !== 'undefined' && !('sendBeacon' in navigator)) {
-  Object.defineProperty(navigator, 'sendBeacon', {
-    value: () => true,
-    configurable: true,
-    writable: true,
-  });
-}
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 

@@ -72,6 +72,11 @@ interface EventDocument {
   utm_campaign: string | null;
   utm_term: string | null;
   utm_content: string | null;
+  gclid: string | null;
+  gbraid: string | null;
+  wbraid: string | null;
+  fbclid: string | null;
+  fbp: string | null;
   ip: string | null;
   os_version: string | null;
   device_model: string | null;
@@ -371,6 +376,11 @@ export class MongoDBAdapter implements DBAdapter {
       utm_campaign: e.utm?.campaign ?? null,
       utm_term: e.utm?.term ?? null,
       utm_content: e.utm?.content ?? null,
+      gclid: e.ads?.gclid ?? null,
+      gbraid: e.ads?.gbraid ?? null,
+      wbraid: e.ads?.wbraid ?? null,
+      fbclid: e.ads?.fbclid ?? null,
+      fbp: e.ads?.fbp ?? null,
       ip: e.ip ?? null,
       os_version: e.device?.osVersion ?? null,
       device_model: e.device?.deviceModel ?? null,
