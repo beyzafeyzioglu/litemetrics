@@ -89,10 +89,11 @@ export interface UTMParams {
 }
 
 /**
- * Ad platform click identifiers, captured from the landing URL and carried for
- * the session. Server-side conversion upload APIs key on these — UTM values are
- * not accepted as a substitute, and a click ID missed at click time cannot be
- * backfilled later.
+ * Ad platform click identifiers, captured from the landing URL and kept for
+ * `CLICK_ID_TTL` (90 days — the conversion windows they serve); `reset()`
+ * removes them. Server-side conversion upload APIs key on these — UTM values
+ * are not accepted as a substitute, and a click ID missed at click time cannot
+ * be backfilled later.
  */
 export interface AdsParams {
   /** Google Ads click ID. */

@@ -66,6 +66,24 @@ describe('event column alignment (postgres)', () => {
     expect(buildEventRow(fullEvent)).not.toContain(null);
   });
 
+  it('distinct values land under their own column labels — a swapped pair fails, not just a gap', () => {
+    const row = buildEventRow(fullEvent);
+    const at = (col: (typeof EVENT_BASE_COLUMNS)[number]) => row[EVENT_BASE_COLUMNS.indexOf(col)];
+    expect(at('site_id')).toBe('site_1');
+    expect(at('visitor_id')).toBe('vis_1');
+    expect(at('event_name')).toBe('signup');
+    expect(at('element_text')).toBe('Go');
+    expect(at('utm_source')).toBe('s');
+    expect(at('utm_content')).toBe('n');
+    expect(at('gclid')).toBe('g');
+    expect(at('gbraid')).toBe('gb');
+    expect(at('wbraid')).toBe('wb');
+    expect(at('fbclid')).toBe('f');
+    expect(at('fbp')).toBe('fb.1.1.2');
+    expect(at('ip')).toBe('1.2.3.4');
+    expect(at('bot_flag')).toBe('signature');
+  });
+
   it('EVENT_BASE_COLUMNS matches the DDL columns, in order', () => {
     const ddlColumns = ddlColumnNames(CREATE_EVENTS_TABLE)
       .filter((c) => c !== 'event_id' && c !== 'created_at');

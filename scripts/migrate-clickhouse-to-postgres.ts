@@ -10,7 +10,7 @@
  *   bun scripts/migrate-clickhouse-to-postgres.ts
  *
  * Optional flags:
- *   --batch-size <N>      events per insert batch (default: 1000, max safe: 1400)
+ *   --batch-size <N>      events per insert batch (default: 1000, max safe: 1300)
  *   --since <ISO>         only events with timestamp >= ISO date
  *   --since-auto          resume from MAX(timestamp) in Postgres
  *   --overlap-minutes <N> safety buffer for --since-auto (default: 360 = 6h)
