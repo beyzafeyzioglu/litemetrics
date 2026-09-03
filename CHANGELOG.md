@@ -4,7 +4,8 @@
 
 ### `@litemetrics/tracker`
 
-- **Auto-captured link clicks now carry element identity.** `Link Click`, `Outbound Link` and `File Download` events include `elementSelector` and `elementText` (same helpers, on the anchor element, that button clicks already used). Purely additive: existing fields, event names and subtypes are unchanged; an anchor with no visible text (icon links) keeps `elementText` absent. A button wrapped in an anchor is attributed to the link branch with the anchor's identity.
+- **Auto-captured link clicks now carry element identity.** `Link Click`, `Outbound Link` and `File Download` events include `elementSelector` and `elementText` (same helpers, on the anchor element, that button clicks already used). An anchor with no visible text (icon links) keeps `elementText` absent. A button wrapped in an anchor is attributed to the link branch with the anchor's identity.
+- **Outbound link rows now carry the full destination.** For `Outbound Link` events, `targetUrlPath` is `host + path + query` instead of the bare pathname — previously `wa.me/1555…` stored only `/1555…` and `api.whatsapp.com/send?phone=…` stored only `/send`, discarding exactly what identifies the destination. Internal links (including `tel:` / `mailto:`, which already carry their payload in the path) are unchanged. **Data note:** `top_link_targets` keys for outbound clicks become host-qualified from this release; older rows keep the bare-path shape.
 
 ## 0.8.0 - App traffic unfiltered, collect observability, tracker hard stop
 

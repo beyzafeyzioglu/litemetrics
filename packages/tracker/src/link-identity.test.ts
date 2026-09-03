@@ -94,9 +94,9 @@ describe('link click element identity', () => {
     expect(event.eventSubtype).toBe('link_click');
     expect(event.elementText).toBe('Hemen Ara');
     expect(event.elementSelector).toBe('a.cta.primary');
-    // Existing payload shape unchanged.
+    // Internal-shape payload unchanged: tel: keeps its number as the bare path.
     expect(event.pagePath).toBeDefined();
-    expect(event.targetUrlPath).toBeDefined();
+    expect(event.targetUrlPath).toBe('+901234567890');
   });
 
   it('Outbound Link carries both identity fields', async () => {
@@ -110,6 +110,8 @@ describe('link click element identity', () => {
     expect(event.eventSubtype).toBe('outbound_click');
     expect(event.elementText).toBe('Partner Offer');
     expect(event.elementSelector).toBe('#partner-link');
+    // Outbound rows carry the destination host — the path alone identifies nothing.
+    expect(event.targetUrlPath).toBe('external.example/offer');
   });
 
   it('File Download carries both identity fields', async () => {
@@ -136,6 +138,20 @@ describe('link click element identity', () => {
     const event = await waitForEvent(fetchSpy, 'Outbound Link');
     expect(event.elementText).toBeUndefined();
     expect(event.elementSelector).toBe('a.icon-wa');
+    // #19 acceptance: the WhatsApp destination (host + number) is recoverable.
+    expect(event.targetUrlPath).toBe('wa.me/901234567890');
+  });
+
+  it('an outbound destination with its payload in the query keeps the query (api.whatsapp.com)', async () => {
+    const fetchSpy = spyFetch();
+    makeAutoTracker();
+
+    const link = mount('<a href="https://api.whatsapp.com/send?phone=15551234567">Chat</a>');
+    click(link);
+
+    const event = await waitForEvent(fetchSpy, 'Outbound Link');
+    // #19 acceptance: the phone survives — /send alone identifies nothing.
+    expect(event.targetUrlPath).toBe('api.whatsapp.com/send?phone=15551234567');
   });
 
   it('collapses whitespace and caps elementText at 80 characters', async () => {

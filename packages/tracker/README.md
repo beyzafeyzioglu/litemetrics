@@ -48,7 +48,7 @@ When `autoTrack` is enabled (default), the tracker automatically captures:
 - **SPA Navigation** - Route changes via History API
 - **Data Attributes** - Clicks on `data-litemetrics-event="EventName"` elements
 - **Link Clicks** - Internal link clicks (path + link target path + text + selector)
-- **Outbound Links** - Clicks on external links (text + selector)
+- **Outbound Links** - Clicks on external links (destination host + path + query, text + selector)
 - **File Downloads** - Clicks on links to `.pdf`, `.zip`, `.doc`, `.csv`, etc. (text + selector)
 - **Button Clicks** - Button clicks (text + selector)
 - **Scroll Depth** - Milestones at 25%, 50%, 75%, 90%

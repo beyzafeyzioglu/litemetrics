@@ -62,7 +62,7 @@ createTracker({
 |-------|---------|------|
 | `pageview` | Page load + SPA navigation | URL, referrer, title |
 | `link_click` | Click on internal link | Target URL, element text, selector |
-| `outbound_click` | Click on external link | Target URL, element text, selector |
+| `outbound_click` | Click on external link | Destination (host + path + query), element text, selector |
 | `file_download` | Click on .pdf/.zip/.doc/etc. | File URL, extension, element text, selector |
 | `button_click` | Click on button / `[role="button"]` | Element text, selector |
 | `scroll_depth` | Scroll past 25/50/75/90% | Depth percentage |
