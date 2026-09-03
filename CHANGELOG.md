@@ -19,6 +19,9 @@
 - **Operators:** existing ClickHouse/Postgres deployments migrate automatically at collector startup (idempotent `ADD COLUMN IF NOT EXISTS` in `init()`); no manual SQL.
 - `scripts/migrate-clickhouse-to-postgres.ts` and `scripts/backup-clickhouse.ts` now `DESCRIBE` the source table and project `NULL` for columns it does not have yet, instead of failing with `UNKNOWN_IDENTIFIER` against a pre-upgrade ClickHouse source. The backup's column list is now built from `EVENT_BASE_COLUMNS` (it had drifted and was silently omitting `bot_flag`).
 - **Data note:** Postgres INSERT batches are now 1300 rows (48 columns/row under the 65,535 bind-parameter cap).
+### `@litemetrics/tracker`
+
+- **One click on a labelled element now produces one event.** A click on (or inside) an element carrying a non-empty `data-litemetrics-event` is recorded only as the declared event; the auto `Link Click` / `Outbound Link` / `File Download` / `Button Click` rows are suppressed for it. Previously both fired, double-counting exactly the elements site authors had labelled — and the pair shared no key, so the duplication was unrepairable server-side. **Upgrading integrators will see auto click rows disappear for labelled elements** (they were duplicates); an *empty* label (`data-litemetrics-event=""`) counts as unlabelled and keeps today's auto capture. Rage-click and scroll events are unaffected.
 
 ## 0.8.0 - App traffic unfiltered, collect observability, tracker hard stop
 
